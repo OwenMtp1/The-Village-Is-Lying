@@ -51,10 +51,10 @@ export function viewpoints(village: Village): Viewpoint[] {
     ins('taverne', 'Taverne — grande salle', [-5.6, 1.7, 4.4], [5.5, 1.1, -0.5]),
     ins('taverne', 'Taverne — cave', [-3, -0.85, 3.5], [5, -1.8, -3]),
     ins('taverne', 'Taverne — étage', [-6.2, 3.4 + 1.65, -2.5], [6, 3.4 + 1.2, -2.6]),
-    ins('forge', 'Forge — atelier', [2.5, 1.7, 3.8], [-3.5, 1.0, -3.6]),
+    ins('forge', 'Forge — atelier', [0.6, 1.7, 3.7], [-2.6, 0.9, -3.6]),
     ins('apothicaire', 'Apothicairerie', [0.3, 1.65, 3.0], [-1.8, 1.2, -3]),
     ins('eglise', 'Église — nef', [0, 1.75, 10.5], [0, 2.4, -11]),
-    ins('eglise', 'Clocher — chambre des cloches', [-1.4, 13.4 + 1.6, 15.8], [2, 13.4 + 1.6, 26]),
+    ins('eglise', 'Clocher — chambre des cloches', [-1.2, 13.4 + 1.8, 12.7], [0.4, 13.4 + 1.0, 30]),
     ins('sherif', 'Poste du shérif', [-3.2, 1.7, 3.6], [1.5, 1.2, -3.6]),
     ins('ecuries', 'Écuries', [-6.5, 1.75, 2.6], [3, 0.9, -2.8]),
     ins('grange', 'Grange', [0, 1.8, 6.5], [0, 2.2, -6]),
@@ -81,6 +81,7 @@ export class VillageView {
   private dragging = false;
   private lastPointer = { x: 0, y: 0 };
   private insideId: string | null = null;
+  private lastInside: string | null = null;
   quality: Quality = 1;
   roofMode: RoofMode = 'auto';
   mode: CamMode = 'orbite';
@@ -101,6 +102,7 @@ export class VillageView {
     r.toneMappingExposure = 1.05;
     r.outputColorSpace = THREE.SRGBColorSpace;
     r.shadowMap.enabled = true;
+    r.info.autoReset = false;
     r.shadowMap.type = THREE.PCFSoftShadowMap;
     container.appendChild(r.domElement);
     this.renderer = r;
@@ -164,6 +166,7 @@ export class VillageView {
 
   goTo(v: Viewpoint, instant = false) {
     this.setMode(v.mode);
+    this.atmo.invalidate();
     if (instant) {
       this.camera.position.copy(v.pos);
       this.camera.lookAt(v.target);
@@ -299,15 +302,24 @@ export class VillageView {
       const fy = new THREE.Vector3().setFromMatrixPosition(b.matrix).y;
       if (cam.position.y > fy - 3 && cam.position.y < fy + b.plan.wallTop + 0.2) this.insideId = b.spec.id;
     }
+    // toits « auto » : masqués seulement quand la caméra survole le bâtiment (vue en coupe des étages) ;
+    // à hauteur d'homme, à l'intérieur comme dans la rue, les toits et les plafonds restent en place
     for (const b of this.village.buildings) {
       const d = Math.hypot(cam.position.x - b.spec.x, cam.position.z - b.spec.z);
-      b.roof.visible = this.roofMode === 'visible' ? true : this.roofMode === 'masque' ? false : b.spec.id !== this.insideId;
+      const eaves = new THREE.Vector3().setFromMatrixPosition(b.matrix).y + b.plan.wallTop;
+      const over = cam.position.y > eaves + 1 && d < Math.max(b.spec.w, b.spec.d) / 2 + 5;
+      b.roof.visible = this.roofMode === 'visible' ? true : this.roofMode === 'masque' ? false : !over;
       b.interior.visible = d < 90;
+    }
+    if (this.insideId !== this.lastInside) {
+      this.lastInside = this.insideId;
+      this.atmo.invalidate();
     }
 
     const focus = this.mode === 'orbite' ? this.orbit.target : cam.position.clone().add(cam.getWorldDirection(new THREE.Vector3()).multiplyScalar(25));
     this.atmo.update(dt, cam, focus, this.insideId);
 
+    this.renderer.info.reset();
     if (this.quality === 2) this.renderer.render(this.scene, cam);
     else this.composer.render(dt);
 

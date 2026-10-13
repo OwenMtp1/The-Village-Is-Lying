@@ -5,7 +5,7 @@
  */
 import * as THREE from 'three';
 import { Batch } from './geom';
-import { BUILDINGS, CEMETERY, GARDENS, PATHS, PLAZA, heightAt, insideBuilding, localToWorld, pointAt, polygonDistance, roadDistance, rng, type P2 } from './layout';
+import { BUILDINGS, CEMETERY, FIELDS, GARDENS, PATHS, PLAZA, fieldPoly, heightAt, insideBuilding, localToWorld, pointAt, polygonDistance, roadDistance, rng, type P2 } from './layout';
 import { LANTERN_LIGHT, type PropSet } from './props';
 import { VM } from './textures';
 import type { BuiltBuilding, WorldLight } from './buildings';
@@ -86,6 +86,7 @@ export function buildDecor(built: BuiltBuilding[], props: PropSet): { lights: Wo
         const x = q[0] + n[0] * tryS * off;
         const z = q[1] + n[1] * tryS * off;
         if (polygonDistance(x, z, PLAZA) < 1) continue;
+        if (Math.hypot(x + 101, z + 66.5) < 32) continue;
         if (!clear(c, x, z, 0.7, false) || roadDistance(x, z).d < 0.3) continue;
         // le bras de la lanterne avance au-dessus de la chaussée
         lantern(c, x, z, Math.atan2(-n[0] * tryS, -n[1] * tryS));
@@ -188,6 +189,28 @@ export function buildDecor(built: BuiltBuilding[], props: PropSet): { lights: Wo
     for (let i = 0; i < 3; i++) fenceLine(c, 'fence', pts[i], pts[i + 1]);
     const [x, z] = localToWorld(fe, -3, -fe.d / 2 - 13);
     put(c, 'scarecrow', x, z, 0.3, { check: false });
+  }
+
+  // ── champs : rangs de cultures, meules dans les prés de fauche, clôtures avec barrière ──
+  for (const f of FIELDS) {
+    const cs = Math.cos(f.rot);
+    const sn = Math.sin(f.rot);
+    const at = (lx: number, lz: number): P2 => [f.cx + lx * cs + lz * sn, f.cz - lx * sn + lz * cs];
+    if (f.kind === 'cultive')
+      for (let lz = -f.d / 2 + 0.8; lz < f.d / 2 - 0.5; lz += 1.2)
+        for (let lx = -f.w / 2 + 1.4; lx < f.w / 2 - 1.2; lx += 2.4) {
+          const [x, z] = at(lx, lz);
+          put(c, Math.floor(lz) % 3 === 0 ? 'cabbages' : 'vegRow', x, z, f.rot, { check: false });
+        }
+    if (f.kind === 'fauche')
+      for (let k = 0; k < 5; k++) {
+        const [x, z] = at((r() - 0.5) * f.w * 0.75, (r() - 0.5) * f.d * 0.7);
+        put(c, k < 2 ? 'haystack' : 'hayBale', x, z, r() * 6, { check: false, scale: k < 2 ? 0.8 + r() * 0.3 : 1 });
+      }
+    if (f.edge === 'cloture') {
+      const p = fieldPoly(f, 0.6);
+      for (let i = 0; i < 4; i++) fenceLine(c, 'fence', p[i], p[(i + 1) % 4], i === 0 ? [[f.w / 2 - 1.6, f.w / 2 + 1.6]] : []);
+    }
   }
 
   // ── cimetière : murets, portail, tombes en rangées irrégulières ──

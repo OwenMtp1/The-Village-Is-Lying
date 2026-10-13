@@ -493,6 +493,7 @@ export function isFree(x: number, z: number, margin = 1): boolean {
   if (roadDistance(x, z).d < margin) return false;
   if (polygonDistance(x, z, PLAZA) < margin || polygonDistance(x, z, CHURCH_SQUARE) < margin) return false;
   if (x > CEMETERY.x0 - margin && x < CEMETERY.x1 + margin && z > CEMETERY.z0 - margin && z < CEMETERY.z1 + margin) return false;
+  if (inField(x, z, margin)) return false;
   return true;
 }
 
@@ -505,3 +506,59 @@ export function forestEdge(x: number, z: number): number {
   return 128 + 22 * Math.cos(a) * Math.cos(a) + 18 * Math.sin(a * 3 + 1) + 12 * (noise2(Math.cos(a) * 2 + 5, Math.sin(a) * 2) - 0.5);
 }
 export const VILLAGE_CENTER: P2 = [5, -10];
+
+// ───────────────────────── campagne : champs, verger ─────────────────────────
+
+export interface Field {
+  id: string;
+  cx: number;
+  cz: number;
+  w: number;
+  d: number;
+  rot: number;
+  /** labouré (sillons de terre), cultivé (rangs de plants), pré de fauche (meules) */
+  kind: 'laboure' | 'cultive' | 'fauche';
+  /** clôture ou haie autour */
+  edge: 'haie' | 'cloture' | 'aucun';
+}
+
+const FIELD_CANDIDATES: Field[] = [
+  { id: 'champ-sud-ouest', cx: -36, cz: 98, w: 30, d: 18, rot: 0.12, kind: 'laboure', edge: 'haie' },
+  { id: 'champ-sud-est', cx: 28, cz: 84, w: 26, d: 16, rot: -0.18, kind: 'cultive', edge: 'haie' },
+  { id: 'champ-sud', cx: 56, cz: 76, w: 20, d: 14, rot: -0.1, kind: 'fauche', edge: 'aucun' },
+  { id: 'champ-est', cx: 76, cz: 46, w: 22, d: 16, rot: 0.35, kind: 'cultive', edge: 'cloture' },
+  { id: 'pre-est', cx: 150, cz: 20, w: 26, d: 20, rot: 0.6, kind: 'fauche', edge: 'aucun' },
+  { id: 'champ-ouest', cx: -106, cz: 18, w: 22, d: 15, rot: -0.2, kind: 'laboure', edge: 'haie' },
+  { id: 'champ-ouest-2', cx: -104, cz: 70, w: 24, d: 16, rot: 0.25, kind: 'cultive', edge: 'cloture' },
+  { id: 'pre-nord', cx: 52, cz: -48, w: 24, d: 18, rot: 0.3, kind: 'fauche', edge: 'haie' },
+  { id: 'champ-nord-ouest', cx: -60, cz: -88, w: 22, d: 16, rot: -0.4, kind: 'laboure', edge: 'haie' },
+];
+
+export function fieldPoly(f: Field, margin = 0): P2[] {
+  const c = Math.cos(f.rot);
+  const s = Math.sin(f.rot);
+  const hw = f.w / 2 + margin;
+  const hd = f.d / 2 + margin;
+  return [[-hw, -hd], [hw, -hd], [hw, hd], [-hw, hd]].map(([x, z]) => [f.cx + x * c + z * s, f.cz - x * s + z * c] as P2);
+}
+
+/** Champs retenus : ceux qui ne mordent sur aucune rue, aucun bâtiment, aucun jardin ni la forêt dense. */
+export const FIELDS: Field[] = FIELD_CANDIDATES.filter((f) => {
+  const poly = fieldPoly(f, 1.5);
+  if (BUILDINGS.some((b) => convexOverlap(poly, footprint(b, 2)))) return false;
+  for (let i = 0; i <= 8; i++)
+    for (let j = 0; j <= 8; j++) {
+      const u = i / 8;
+      const v = j / 8;
+      const x = poly[0][0] + (poly[1][0] - poly[0][0]) * u + (poly[3][0] - poly[0][0]) * v;
+      const z = poly[0][1] + (poly[1][1] - poly[0][1]) * u + (poly[3][1] - poly[0][1]) * v;
+      if (roadDistance(x, z).d < 0.5) return false;
+      if (Math.hypot(x - VILLAGE_CENTER[0], z - VILLAGE_CENTER[1]) > forestEdge(x, z) + 6) return false;
+    }
+  return true;
+});
+
+export const inField = (x: number, z: number, m = 0) => FIELDS.some((f) => inPolygon(x, z, fieldPoly(f, m)));
+
+/** Verger (pommiers en rangées) à l'ouest, derrière la rue des Tisserands. */
+export const ORCHARD = { cx: -76, cz: -14, cols: 4, rows: 3, step: 6.5, rot: 0.15 };

@@ -387,10 +387,11 @@ export function buildBuilding(b: BuildingSpec, props: PropSet): BuiltBuilding {
           ext.box(VM.planks('#5a4030'), [w / 2 - 0.04, o.y1 - o.y0 - w / 2, 0.09], [c.x, yb + (o.y1 - o.y0 - w / 2) / 2, c.z], { rot: [0, rotYOf(dir), 0], uv: 'local' });
         }
       }
-      if (o.kind === 'arch' && (o.level === 0 || l.y === 0) && o.side !== 'front' || (o.kind === 'arch' && isTower(b, l))) {
+      // portails extérieurs (vantaux) : dégagement devant la porte pour le décor
+      if (o.kind === 'arch' && o.shutters && l.y === 0) {
         const p = toWorld(F.at(o.at, 0, 0.8));
         const n = F.out.clone().transformDirection(matrix);
-        if (o.kind === 'arch' && (isTower(b, l) || o.side === 'right')) doors.push({ x: p[0], z: p[2], nx: n.x, nz: n.z, w: o.w });
+        doors.push({ x: p[0], z: p[2], nx: n.x, nz: n.z, w: o.w });
       }
     }
   }

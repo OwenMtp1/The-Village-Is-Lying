@@ -6,7 +6,7 @@
  */
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
-import { BUILDINGS, GARDENS, VILLAGE_CENTER, WORLD_HALF, forestEdge, heightAt, insideBuilding, isFree, localToWorld, noise2, roadDistance, rng } from './layout';
+import { BUILDINGS, FIELDS, GARDENS, ORCHARD, VILLAGE_CENTER, WORLD_HALF, fieldPoly, forestEdge, heightAt, inField, insideBuilding, isFree, localToWorld, noise2, roadDistance, rng } from './layout';
 
 // ───────────────────────── géométries ─────────────────────────
 
@@ -180,7 +180,7 @@ function grassTuft(): THREE.BufferGeometry {
   for (let i = 0; i < 5; i++) {
     const a = (i / 5) * Math.PI * 2;
     const blade = new THREE.ConeGeometry(0.05, 0.42 + (i % 2) * 0.12, 3).translate(0, 0.21, 0).rotateZ(Math.cos(a) * 0.35).rotateX(Math.sin(a) * 0.35).translate(Math.cos(a) * 0.06, 0, Math.sin(a) * 0.06);
-    parts.push(colored(blade, i % 2 ? '#3f5a30' : '#4d6a36'));
+    parts.push(colored(blade, i % 2 ? '#4a6a36' : '#5a7a40'));
   }
   return mergeGeometries(parts)!;
 }
@@ -191,9 +191,13 @@ function fern(): THREE.BufferGeometry {
     const a = (i / 7) * Math.PI * 2;
     const leaf = new THREE.PlaneGeometry(0.22, 0.8, 1, 3).translate(0, 0.4, 0);
     const pos = leaf.getAttribute('position') as THREE.BufferAttribute;
-    for (let k = 0; k < pos.count; k++) pos.setZ(k, Math.pow(pos.getY(k), 2) * 0.5);
+    for (let k = 0; k < pos.count; k++) {
+      const y = pos.getY(k);
+      pos.setX(k, pos.getX(k) * (1 - y / 0.85) * (0.6 + Math.sin((y / 0.8) * Math.PI) * 0.8));
+      pos.setZ(k, Math.pow(y, 2) * 0.5);
+    }
     leaf.rotateX(-0.5).rotateY(a);
-    parts.push(colored(leaf, i % 2 ? '#2f4a26' : '#3a5a2c'));
+    parts.push(colored(leaf, i % 2 ? '#3d5e2e' : '#4a6b34'));
   }
   return mergeGeometries(parts)!;
 }
@@ -235,7 +239,7 @@ export function buildVegetation(): THREE.Group {
     if (r() > p * 0.42) continue;
     const road = roadDistance(x, z).d;
     if (road < 2.5 + r() * 2) continue;
-    if (nearBuilding(x, z, 4)) continue;
+    if (nearBuilding(x, z, 4) || inField(x, z, 3)) continue;
     const s = 0.85 + r() * 0.75;
     const conifer = noise2(x * 0.015 + 9, z * 0.015) > 0.52 ? 0.75 : 0.25;
     const k = r();
@@ -278,6 +282,36 @@ export function buildVegetation(): THREE.Group {
       sc.add(b.kind === 'abandoned' && r() < 0.4 ? 'deadBush' : `bush${Math.floor(r() * 2)}`, x, z, 0.5 + r() * 0.4, r() * 6, 0.1);
     }
   }
+  // haies vives autour des champs, verger
+  for (const f of FIELDS) {
+    if (f.edge !== 'haie') continue;
+    const p = fieldPoly(f, 1.2);
+    for (let i = 0; i < 4; i++) {
+      const a = p[i];
+      const b = p[(i + 1) % 4];
+      const len = Math.hypot(b[0] - a[0], b[1] - a[1]);
+      for (let s = 0.6; s < len; s += 1.3 + r() * 0.5) {
+        if (i === 0 && Math.abs(s - len / 2) < 2) continue; // passage vers le chemin
+        const x = a[0] + ((b[0] - a[0]) * s) / len;
+        const z = a[1] + ((b[1] - a[1]) * s) / len;
+        if (roadDistance(x, z).d < 1) continue;
+        sc.add(`bush${Math.floor(r() * 2)}`, x, z, 0.75 + r() * 0.35, r() * 6, 0.1, 1.1);
+        if (r() < 0.08) sc.add(`leafy${Math.floor(r() * 3)}`, x, z, 0.8 + r() * 0.3, r() * 6, 0.15);
+      }
+    }
+  }
+  {
+    const { cx: ox, cz: oz, cols, rows, step, rot } = ORCHARD;
+    for (let i = 0; i < cols; i++)
+      for (let j = 0; j < rows; j++) {
+        const lx = (i - (cols - 1) / 2) * step + (r() - 0.5) * 0.8;
+        const lz = (j - (rows - 1) / 2) * step + (r() - 0.5) * 0.8;
+        const x = ox + lx * Math.cos(rot) + lz * Math.sin(rot);
+        const z = oz - lx * Math.sin(rot) + lz * Math.cos(rot);
+        if (isFree(x, z, 2.5)) sc.add('fruit', x, z, 0.55 + r() * 0.15, r() * 6, 0.1);
+      }
+  }
+
   // arbres morts : cimetière et maison abandonnée
   sc.add('dead', 25.5, -91, 1.1, 0.4, 0.2);
   sc.add('dead', -108, -58, 1.25, 2.1, 0.2);
@@ -298,7 +332,7 @@ export function buildVegetation(): THREE.Group {
     const z = cz + (r() * 2 - 1) * 175;
     if (!isFree(x, z, 0.5) || roadDistance(x, z).d < 0.4) continue;
     if (nearBuilding(x, z, 0.4)) continue;
-    sc.add(r() < 0.9 ? 'tuft' : 'fern', x, z, 0.7 + r() * 0.9, r() * 6, 0.02);
+    sc.add('tuft', x, z, 0.6 + r() * 0.7, r() * 6, 0.02);
   }
 
   // géométries

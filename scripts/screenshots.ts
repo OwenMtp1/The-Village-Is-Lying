@@ -49,7 +49,7 @@ for (const v of info.views) {
   const t1 = Date.now();
   const png = await page.evaluate(() => {
     const w = window as unknown as { __village: { view: { renderFrame(): void; renderer: { domElement: HTMLCanvasElement } } } };
-    for (let i = 0; i < 3; i++) w.__village.view.renderFrame();
+    for (let i = 0; i < 2; i++) w.__village.view.renderFrame();
     return w.__village.view.renderer.domElement.toDataURL('image/png');
   });
   const file = `${OUT}/${v.id.replace(/[^a-z0-9-]+/gi, '_').slice(0, 60)}.png`;

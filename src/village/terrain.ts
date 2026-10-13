@@ -5,7 +5,7 @@
  * Les caves percent le terrain (le sol n'apparaît pas au plafond d'une cave).
  */
 import * as THREE from 'three';
-import { BUILDINGS, CEMETERY, CHURCH_SQUARE, GARDENS, PATHS, PLAZA, WORLD_HALF, heightAt, localToWorld, rng, type P2 } from './layout';
+import { BUILDINGS, CEMETERY, CHURCH_SQUARE, FIELDS, GARDENS, PATHS, PLAZA, WORLD_HALF, fieldPoly, heightAt, localToWorld, rng, type P2 } from './layout';
 import { VM } from './textures';
 
 const SPLAT_SIZE = 2048;
@@ -67,6 +67,27 @@ function splatCanvas(doors: { x: number; z: number; nx: number; nz: number; w: n
     const b = BUILDINGS.find((o) => o.id === g.building)!;
     poly([localToWorld(b, g.x0 + 0.6, g.z0 + 0.6), localToWorld(b, g.x1 - 0.6, g.z0 + 0.6), localToWorld(b, g.x1 - 0.6, g.z1 - 0.3), localToWorld(b, g.x0 + 0.6, g.z1 - 0.3)], 'rgba(0,200,0,1)');
   }
+  // champs : terre labourée (sillons dans le canal bleu) ou rangs de cultures
+  for (const f of FIELDS) {
+    if (f.kind === 'fauche') continue;
+    poly(fieldPoly(f), f.kind === 'laboure' ? 'rgba(0,255,0,1)' : 'rgba(0,200,0,1)', 0.4);
+    x.save();
+    x.beginPath();
+    fieldPoly(f, -0.3).forEach((p, i) => (i ? x.lineTo(...P(p)) : x.moveTo(...P(p))));
+    x.clip();
+    x.strokeStyle = 'rgba(0,0,255,1)';
+    x.lineWidth = 0.45 * k;
+    const c = Math.cos(f.rot);
+    const s = Math.sin(f.rot);
+    const spacing = f.kind === 'laboure' ? 0.9 : 1.2;
+    for (let d = -f.d / 2; d <= f.d / 2; d += spacing) {
+      x.beginPath();
+      x.moveTo(...P([f.cx - (f.w / 2 + 2) * c + d * s, f.cz + (f.w / 2 + 2) * s + d * c]));
+      x.lineTo(...P([f.cx + (f.w / 2 + 2) * c + d * s, f.cz - (f.w / 2 + 2) * s + d * c]));
+      x.stroke();
+    }
+    x.restore();
+  }
   // allées du cimetière
   poly([[CEMETERY.gateX - 1, CEMETERY.z1], [CEMETERY.gateX + 1, CEMETERY.z1], [CEMETERY.gateX + 1, CEMETERY.z0 + 2], [CEMETERY.gateX - 1, CEMETERY.z0 + 2]], 'rgba(0,160,0,1)');
   // 2) pavés : rues, ruelles, places (par-dessus la terre)
@@ -122,6 +143,7 @@ export function buildTerrain(doors: { x: number; z: number; nx: number; nz: numb
   const splat = new THREE.CanvasTexture(splatCanvas(doors));
   splat.wrapS = splat.wrapT = THREE.ClampToEdgeWrapping;
   splat.colorSpace = THREE.NoColorSpace;
+  splat.flipY = false;
   splat.anisotropy = 4;
   const grass = VM.grassTex().map;
   const dirt = VM.dirtTex().map;
@@ -189,10 +211,11 @@ export function buildTerrain(doors: { x: number; z: number; nx: number; nz: numb
         vec4 cob = texture2D(tCobble, vWPos.xz / 2.5);
         float cobMix = smoothstep(0.35, 0.65, splatV.r);
         float dirtMix = smoothstep(0.15, 0.7, splatV.g) * (1.0 - cobMix);
+        dirtC *= 1.0 - 0.38 * splatV.b;
         vec3 col = mix(grass, dirtC, dirtMix);
         col = mix(col, cob.rgb * 0.95, cobMix);
         diffuseColor.rgb *= col;
-        hgtV = mix(dot(dirtC, vec3(0.33)) * 0.4 * dirtMix, dot(cob.rgb, vec3(0.33)), cobMix);`,
+        hgtV = mix(dot(dirtC, vec3(0.33)) * 0.4 * dirtMix + (1.0 - splatV.b) * 0.25 * dirtMix, dot(cob.rgb, vec3(0.33)), cobMix);`,
       )
       .replace('#include <roughnessmap_fragment>', 'float roughnessFactor = mix(mix(0.93, 0.97, dirtMix), 0.5 + 0.35 * (1.0 - hgtV), cobMix);')
       .replace(

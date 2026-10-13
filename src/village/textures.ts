@@ -166,16 +166,16 @@ const plaster = () =>
     blotches(x, s, r, 12, 'rgba(80,70,55,A)', 50, 140, 0.12);
     blotches(x, s, r, 10, 'rgba(255,250,235,A)', 20, 70, 0.2);
     // fissures fines
-    x.strokeStyle = 'rgba(70,60,50,0.35)';
-    for (let k = 0; k < 7; k++) {
-      x.lineWidth = 0.6 + r();
+    x.strokeStyle = 'rgba(70,60,50,0.16)';
+    for (let k = 0; k < 4; k++) {
+      x.lineWidth = 0.5 + r() * 0.5;
       x.beginPath();
       let px = r() * s;
       let py = r() * s;
       x.moveTo(px, py);
-      for (let i = 0; i < 8; i++) {
-        px += (r() - 0.5) * 34;
-        py += (r() - 0.3) * 26;
+      for (let i = 0; i < 5; i++) {
+        px += (r() - 0.5) * 16;
+        py += (r() - 0.3) * 14;
         x.lineTo(px, py);
       }
       x.stroke();

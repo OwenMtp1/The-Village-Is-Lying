@@ -102,6 +102,8 @@ export interface Atmosphere {
   hemi: THREE.HemisphereLight;
   update(dt: number, camera: THREE.Camera, focus: THREE.Vector3, insideBuilding: string | null): void;
   setShadowQuality(level: 0 | 1 | 2): void;
+  /** réaffecte les lumières dès la prochaine image (saut de caméra) */
+  invalidate(): void;
   activeLights(): number;
 }
 
@@ -123,9 +125,9 @@ export function setupAtmosphere(renderer: THREE.WebGLRenderer, scene: THREE.Scen
     () => pmrem.dispose(),
   );
 
-  const hemi = new THREE.HemisphereLight('#5d6f9c', '#141210', 0.55);
+  const hemi = new THREE.HemisphereLight('#5d6f9c', '#16130f', 0.65);
   scene.add(hemi);
-  const moon = new THREE.DirectionalLight('#a9bce8', 1.1);
+  const moon = new THREE.DirectionalLight('#a9bce8', 1.35);
   moon.castShadow = true;
   moon.shadow.mapSize.set(2048, 2048);
   const S = 75;
@@ -154,7 +156,7 @@ export function setupAtmosphere(renderer: THREE.WebGLRenderer, scene: THREE.Scen
     update(dt, camera, focus, inside) {
       t += dt;
       // brume au ras du sol : plus dense dans les rues, plus légère vue de haut (le village reste lisible)
-      (scene.fog as THREE.FogExp2).density = THREE.MathUtils.lerp(0.0115, 0.0042, THREE.MathUtils.smoothstep(camera.position.y, 12, 90));
+      (scene.fog as THREE.FogExp2).density = THREE.MathUtils.lerp(0.0115, 0.0026, THREE.MathUtils.smoothstep(camera.position.y, 12, 90));
       domeMat.uniforms.time.value = t;
       // la carte d'ombre de la lune suit la zone regardée (alignée sur les texels pour éviter le scintillement)
       const snap = (v: number) => Math.round(v / 0.5) * 0.5;
@@ -204,6 +206,9 @@ export function setupAtmosphere(renderer: THREE.WebGLRenderer, scene: THREE.Scen
         moon.shadow.map?.dispose();
         moon.shadow.map = null as unknown as THREE.WebGLRenderTarget;
       }
+    },
+    invalidate() {
+      reassign = 0;
     },
     activeLights() {
       return assigned.filter(Boolean).length;
