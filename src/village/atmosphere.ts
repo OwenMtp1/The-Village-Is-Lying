@@ -9,6 +9,7 @@
 import * as THREE from 'three';
 import { RGBELoader } from 'three/examples/jsm/loaders/RGBELoader.js';
 import type { WorldLight } from './buildings';
+import { PACKED, asset } from '../characters/catalog';
 
 export const MOON_DIR = new THREE.Vector3(-0.42, 0.55, -0.72).normalize();
 export const FOG_COLOR = '#0c1322';
@@ -113,8 +114,9 @@ export function setupAtmosphere(renderer: THREE.WebGLRenderer, scene: THREE.Scen
 
   // reflets d'environnement : ciel nocturne HDR, très atténué
   const pmrem = new THREE.PMREMGenerator(renderer);
-  new RGBELoader().load(
-    '/textures/moonless_golf_1k.hdr',
+  // (démonstration publiée : pas de fichier HDR, reflets d'environnement omis)
+  if (!PACKED) new RGBELoader().load(
+    asset('textures/moonless_golf_1k.hdr'),
     (hdr) => {
       scene.environment = pmrem.fromEquirectangular(hdr).texture;
       scene.environmentIntensity = 0.22;

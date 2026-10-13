@@ -8,7 +8,7 @@
  */
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
-import { animsUrl, modelUrl, variantById, type CharacterVariant, type Sex } from './catalog';
+import { PACKED, animsUrl, modelUrl, variantById, type CharacterVariant, type Sex } from './catalog';
 
 /** Clips de locomotion « en place » utilisés (la translation horizontale a été retirée par le pipeline). */
 export const LOCOMOTION = ['walk_slow', 'walk', 'run'] as const;
@@ -39,13 +39,25 @@ export interface CharacterBase {
 }
 
 const loader = new GLTFLoader();
+
+/** Charge un GLB (ou sa version emballée en JSON dans la démonstration publiée). */
+async function loadGlb(url: string) {
+  if (!PACKED) return loader.loadAsync(url);
+  const res = await fetch(`${url}.json`);
+  if (!res.ok) throw new Error(`${url} : ${res.status}`);
+  const { data } = (await res.json()) as { data: string };
+  const bin = atob(data);
+  const buf = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) buf[i] = bin.charCodeAt(i);
+  return loader.parseAsync(buf.buffer, '');
+}
 const animSets = new Map<Sex, Promise<AnimSet>>();
 const bases = new Map<string, Promise<CharacterBase>>();
 
 function loadAnims(sex: Sex): Promise<AnimSet> {
   let p = animSets.get(sex);
   if (!p) {
-    p = loader.loadAsync(animsUrl(sex)).then((gltf) => {
+    p = loadGlb(animsUrl(sex)).then((gltf) => {
       const extras = (gltf.parser.json.extras ?? {}) as { hipHeight?: number; clips?: Record<string, { speed?: number }> };
       const speed: Record<string, number> = {};
       for (const [k, v] of Object.entries(extras.clips ?? {})) if (v.speed) speed[k] = v.speed;
@@ -111,7 +123,7 @@ export function loadCharacter(id: string): Promise<CharacterBase> {
   const variant = variantById(id);
   if (!variant) return Promise.reject(new Error(`personnage inconnu : ${id}`));
   p = (async () => {
-    const [gltf, anims] = await Promise.all([loader.loadAsync(modelUrl(id)), loadAnims(variant.sex)]);
+    const [gltf, anims] = await Promise.all([loadGlb(modelUrl(id)), loadAnims(variant.sex)]);
     const scene = gltf.scene;
     const warnings: string[] = [];
     let rootBone: THREE.Object3D | null = null;

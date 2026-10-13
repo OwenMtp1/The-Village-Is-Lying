@@ -4,6 +4,7 @@
  * Les géométries du village portent des UV en mètres : la répétition de chaque texture correspond à sa taille réelle.
  */
 import * as THREE from 'three';
+import { asset } from '../characters/catalog';
 
 const texCache = new Map<string, { map: THREE.Texture; bump: THREE.Texture }>();
 const photoLoader = new THREE.TextureLoader();
@@ -463,7 +464,7 @@ function photo(name: string, meters: number) {
   const key = `photo|${name}`;
   let t = texCache.get(key);
   if (!t) {
-    const map = photoLoader.load(`/textures/${name}`);
+    const map = photoLoader.load(asset(`textures/${name}`));
     map.colorSpace = THREE.SRGBColorSpace;
     map.wrapS = map.wrapT = THREE.RepeatWrapping;
     map.anisotropy = 8;
@@ -537,7 +538,7 @@ export const VM = {
   glow: (color: string, intensity = 3) => cached(`glow|${color}|${intensity}`, () => new THREE.MeshStandardMaterial({ color, emissive: color, emissiveIntensity: intensity, roughness: 1 })),
   water: () =>
     cached('vwater', () => {
-      const t = photoLoader.load('/textures/Water_1_M_Normal.jpg');
+      const t = photoLoader.load(asset('textures/Water_1_M_Normal.jpg'));
       t.wrapS = t.wrapT = THREE.RepeatWrapping;
       t.repeat.set(0.6, 0.6);
       return new THREE.MeshStandardMaterial({ color: '#0d1820', normalMap: t, roughness: 0.04, metalness: 0.3 });

@@ -9,6 +9,10 @@ import type { Sex } from '../characters/catalog';
 
 type Listener = () => void;
 
+/** Version de démonstration publiée sans serveur de jeu (build `--mode static`) : pas de parties en ligne. */
+export const STATIC = (import.meta as { env?: { MODE?: string } }).env?.MODE === 'static';
+export const OFFLINE_MESSAGE = 'Version de démonstration sans serveur : les parties en ligne demandent de lancer le serveur du jeu (npm start). L’exploration solo est disponible.';
+
 class Net {
   readonly socket: Socket<ServerToClient, ClientToServer>;
   lobby: LobbyView | null = null;
@@ -64,10 +68,12 @@ class Net {
   }
 
   connect() {
+    if (STATIC) return;
     if (!this.socket.connected) this.socket.connect();
   }
 
   private call<T>(ev: keyof ClientToServer, p: unknown): Promise<T> {
+    if (STATIC) return Promise.reject(new Error(OFFLINE_MESSAGE));
     this.connect();
     return new Promise((resolve, reject) => {
       const t = setTimeout(() => reject(new Error('Le serveur ne répond pas.')), 8000);

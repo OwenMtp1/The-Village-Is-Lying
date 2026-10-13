@@ -133,3 +133,4 @@ html, body { margin: 0; height: 100%; overflow: hidden; }
 .toast { background: var(--panel); border: 1px solid var(--line); padding: 8px 12px; font-size: 14px; text-align: center; }
 .toast.bad { border-color: #e0675a; }
 @media (max-width: 640px) { .rolecard { right: 8px; left: 8px; max-width: none; } .prompts { bottom: 140px; } }
+.offline { color: #e0a85a; font-size: 13px; border: 1px solid rgba(224, 168, 90, 0.4); padding: 8px 10px; margin: 0 0 12px; }

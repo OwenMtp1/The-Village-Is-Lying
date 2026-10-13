@@ -63,6 +63,13 @@ export const VARIANTS: CharacterVariant[] = [
 
 export const variantById = (id: string) => VARIANTS.find((v) => v.id === id);
 export const variantsOf = (sex: Sex) => VARIANTS.filter((v) => v.sex === sex);
-export const modelUrl = (id: string) => `/characters/${id}.glb`;
-export const animsUrl = (sex: Sex) => `/characters/anims-${sex === 'F' ? 'f' : 'm'}.glb`;
-export const cardUrl = (id: string) => `/characters/cards/${id}.jpg`;
+/**
+ * Adresse d'une ressource publique, relative à la base de la page (`/` en temps normal, `./` pour la version
+ * statique publiée sous un sous-chemin). Hors navigateur (serveur, tests), la base vaut `/`.
+ */
+export const asset = (path: string) => `${(import.meta as { env?: { BASE_URL?: string } }).env?.BASE_URL ?? '/'}${path}`;
+/** Version de démonstration publiée (build `--mode static`) : modèles emballés en JSON (base64). */
+export const PACKED = (import.meta as { env?: { MODE?: string } }).env?.MODE === 'static';
+export const modelUrl = (id: string) => asset(`characters/${id}.glb`);
+export const animsUrl = (sex: Sex) => asset(`characters/anims-${sex === 'F' ? 'f' : 'm'}.glb`);
+export const cardUrl = (id: string) => asset(`characters/cards/${id}.jpg`);

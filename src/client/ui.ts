@@ -4,7 +4,7 @@
  */
 import { MAX_PLAYERS, MIN_PLAYERS, PRESETS, ROLES, ROLE_INFO, compositionErrors, presetOf, totalOf, DEFAULT_COMPOSITION, type Composition } from '../shared/roles';
 import { cardUrl, type Sex } from '../characters/catalog';
-import { net } from './net';
+import { OFFLINE_MESSAGE, STATIC, net } from './net';
 import type { OnlineGame } from './online';
 
 const h = (html: string) => {
@@ -160,6 +160,11 @@ export class GameUi {
       /* rien */
     }
     net.connect();
+    if (STATIC) {
+      // démonstration sans serveur : l'exploration solo est ouverte d'emblée, les parties en ligne expliquées
+      (this.menu.querySelector('[data-tab="solo"]') as HTMLElement).click();
+      for (const t of this.menu.querySelectorAll<HTMLElement>('.tab[data-tab="creer"], .tab[data-tab="rejoindre"]')) t.prepend(h(`<p class="offline">${esc(OFFLINE_MESSAGE)}</p>`));
+    }
   }
 
   attach(online: OnlineGame) {
