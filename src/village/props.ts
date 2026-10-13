@@ -6,6 +6,8 @@
 import * as THREE from 'three';
 import { Batch, type V3 } from './geom';
 import { VM } from './textures';
+import { FURN } from './plans';
+import type { Obb } from './collision';
 
 // ───────────────────────── matériaux partagés ─────────────────────────
 
@@ -678,6 +680,23 @@ function seeded(seed: number) {
   return () => ((s = (s * 9301 + 49297) % 233280) / 233280);
 }
 
+/** Emprise (largeur, profondeur, hauteur) des objets d'extérieur qui bloquent le passage. */
+const OUTDOOR_SOLIDS: Record<string, readonly [number, number, number]> = {
+  lanternPost: [0.3, 0.3, 3.2],
+  well: [2.6, 2.6, 1.0],
+  stall: [2.7, 1.2, 2.4],
+  fence: [2.0, 0.14, 1.1],
+  picket: [2.0, 0.12, 1.0],
+  stoneWall: [2.0, 0.5, 0.95],
+  gravestone: [0.6, 0.16, 1.0],
+  graveCross: [0.6, 0.3, 1.1],
+  tomb: [1.0, 2.1, 0.72],
+  haystack: [2.8, 2.8, 2.6],
+  woodpile: [2.2, 0.7, 1.05],
+  signPost: [0.14, 0.14, 2.2],
+  pillory: [1.6, 1.6, 1.9],
+};
+
 /** Point de fixation de la flamme des lanternes, dans le repère de l'objet (pour les lumières). */
 export const LANTERN_LIGHT: Record<string, V3> = { lanternPost: [0, 2.82, 0.6], wallLantern: [0, 0.24, 0.42] };
 
@@ -718,6 +737,30 @@ export class PropSet {
     const q = new THREE.Quaternion().setFromEuler(new THREE.Euler(o.tilt ?? 0, rot, (o.tilt ?? 0) * 0.3, 'YXZ'));
     const s = o.scale ?? 1;
     this.add(type, new THREE.Matrix4().compose(new THREE.Vector3(x, y, z), q, new THREE.Vector3(s, s, s)), outdoor);
+  }
+
+  /**
+   * Emprises des objets d'extérieur qui gênent le passage (les meubles d'intérieur sont pris dans les plans).
+   * Une clôture étirée garde son étirement.
+   */
+  obstacles(): Obb[] {
+    const out: Obb[] = [];
+    const p = new THREE.Vector3();
+    const q = new THREE.Quaternion();
+    const s = new THREE.Vector3();
+    const e = new THREE.Euler();
+    for (const [key, list] of this.list) {
+      const [type, where] = key.split('|');
+      if (where !== 'o') continue;
+      const dims = OUTDOOR_SOLIDS[type] ?? (type in FURN && !['rug', 'pallet', 'bedroll', 'debris'].includes(type) ? FURN[type as keyof typeof FURN] : null);
+      if (!dims) continue;
+      for (const m of list) {
+        m.decompose(p, q, s);
+        e.setFromQuaternion(q, 'YXZ');
+        out.push({ x: p.x, z: p.z, hx: (dims[0] / 2) * s.x, hz: (dims[1] / 2) * s.z, rot: e.y, y0: p.y - 0.3, y1: p.y + dims[2] * s.y, tag: type });
+      }
+    }
+    return out;
   }
 
   count() {

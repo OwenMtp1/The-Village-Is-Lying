@@ -5,7 +5,7 @@
  * Les caves percent le terrain (le sol n'apparaît pas au plafond d'une cave).
  */
 import * as THREE from 'three';
-import { BUILDINGS, CEMETERY, CHURCH_SQUARE, FIELDS, GARDENS, PATHS, PLAZA, WORLD_HALF, fieldPoly, heightAt, localToWorld, rng, type P2 } from './layout';
+import { BUILDINGS, CEMETERY, CHURCH_SQUARE, FIELDS, GARDENS, PATHS, PLAZA, TERRAIN_SEG, WORLD_HALF, fieldPoly, localToWorld, rng, terrainGrid, type P2 } from './layout';
 import { VM } from './textures';
 
 const SPLAT_SIZE = 2048;
@@ -132,11 +132,18 @@ export interface Terrain {
 
 export function buildTerrain(doors: { x: number; z: number; nx: number; nz: number; w: number }[]): Terrain {
   const size = WORLD_HALF * 2;
-  const seg = 320;
+  const seg = TERRAIN_SEG;
   const g = new THREE.PlaneGeometry(size, size, seg, seg);
   g.rotateX(-Math.PI / 2);
+  // mêmes hauteurs que les collisions (`groundHeight`) : sommet (ix, iz) de la grille partagée
   const pos = g.getAttribute('position') as THREE.BufferAttribute;
-  for (let i = 0; i < pos.count; i++) pos.setY(i, heightAt(pos.getX(i), pos.getZ(i)));
+  const hg = terrainGrid();
+  const step = size / seg;
+  for (let i = 0; i < pos.count; i++) {
+    const ix = Math.round((pos.getX(i) + WORLD_HALF) / step);
+    const iz = Math.round((pos.getZ(i) + WORLD_HALF) / step);
+    pos.setY(i, hg[iz * (seg + 1) + ix]);
+  }
   g.computeVertexNormals();
   g.computeBoundingSphere();
 

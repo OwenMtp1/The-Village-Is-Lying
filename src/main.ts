@@ -4,6 +4,10 @@
  */
 import { buildVillage } from './village/village';
 import { VillageView, type Quality, type RoofMode } from './village/view';
+import { Input } from './input';
+import { Game } from './characters/game';
+import { VARIANTS, cardUrl, type Sex } from './characters/catalog';
+import { loadCharacter } from './characters/assets';
 
 const app = document.getElementById('app')!;
 const loading = document.createElement('div');
@@ -18,7 +22,9 @@ const village = await buildVillage((f, text) => {
   label.textContent = text;
 });
 bar.style.width = '100%';
-const view = new VillageView(app, village);
+const input = new Input(app);
+const view = new VillageView(app, village, input);
+const game = new Game(village, view.scene, view.camera, input);
 
 // ── interface d'inspection ──
 const ui = document.createElement('div');
@@ -38,6 +44,7 @@ ui.innerHTML = `
     <div class="seg" data-k="q"><button data-v="0">Haute</button><button data-v="1">Moyenne</button><button data-v="2">Basse</button></div>
     <h2>Extérieurs</h2><div class="ext"></div>
     <h2>Intérieurs</h2><div class="int"></div>
+    <h2>Partie</h2><button class="to-game">▶ Jouer un personnage</button>
     <div class="help">
       <kbd>F</kbd> orbite / vol libre · <kbd>R</kbd> toits<br>
       Orbite : glisser pour tourner, clic droit pour déplacer, molette pour zoomer.<br>
@@ -85,5 +92,79 @@ view.onInfo = (i) => {
 };
 requestAnimationFrame(() => loading.classList.add('done'));
 
+// ── jeu : choix du sexe, apparence tirée au sort, contrôle du personnage ──
+const choose = document.createElement('div');
+choose.className = 'choose';
+choose.innerHTML = `<div class="choose-box">
+  <h1>Nouvelle partie</h1>
+  <p>Choisissez votre personnage. Son apparence sera tirée au sort parmi les villageois disponibles.</p>
+  <div class="choose-row"><button data-sex="M">Masculin</button><button data-sex="F">Féminin</button></div>
+  <button class="link inspect">Explorer la map sans personnage</button>
+  <div class="choose-status"></div>
+</div>`;
+document.body.appendChild(choose);
+const hud = document.createElement('div');
+hud.className = 'game-hud';
+hud.innerHTML = `<div class="who"><img alt=""><div><div class="who-name"></div><div class="who-sub"></div></div></div>
+  <div class="game-help">Cliquez pour diriger la caméra · <kbd>Z Q S D</kbd> se déplacer · <kbd>Maj</kbd> courir · <kbd>Espace</kbd> sauter · <kbd>V</kbd> vue subjective · molette : distance · <kbd>Échap</kbd> libérer la souris</div>
+  <div class="game-buttons"><button class="new-game">Nouvelle partie</button><button class="to-inspect">Inspecter la map</button></div>`;
+document.body.appendChild(hud);
+const status = choose.querySelector('.choose-status') as HTMLElement;
+
+function showChoice(on: boolean) {
+  choose.classList.toggle('open', on);
+  game.frozen = on;
+  if (on) input.unlock();
+}
+function enterGame() {
+  view.driver = { update: (dt) => game.update(dt) };
+  document.body.classList.add('playing');
+  input.flush();
+}
+function enterInspection() {
+  view.driver = null;
+  document.body.classList.remove('playing');
+  input.unlock();
+  showChoice(false);
+}
+for (const b of choose.querySelectorAll<HTMLButtonElement>('[data-sex]'))
+  b.onclick = async () => {
+    status.textContent = 'Le village prépare votre personnage…';
+    for (const x of choose.querySelectorAll('button')) (x as HTMLButtonElement).disabled = true;
+    try {
+      const info = await game.start(b.dataset.sex as Sex);
+      (hud.querySelector('.who img') as HTMLImageElement).src = cardUrl(info.player.variant);
+      hud.querySelector('.who-name')!.textContent = info.player.firstName;
+      hud.querySelector('.who-sub')!.textContent = `${b.dataset.sex === 'F' ? 'Personnage féminin' : 'Personnage masculin'} · modèle ${info.player.variant}`;
+      status.textContent = '';
+      showChoice(false);
+      enterGame();
+    } catch (e) {
+      status.textContent = `Impossible de charger le personnage : ${(e as Error).message}`;
+    } finally {
+      for (const x of choose.querySelectorAll('button')) (x as HTMLButtonElement).disabled = false;
+    }
+  };
+choose.querySelector('.inspect')!.addEventListener('click', () => enterInspection());
+hud.querySelector('.new-game')!.addEventListener('click', () => showChoice(true));
+hud.querySelector('.to-inspect')!.addEventListener('click', () => enterInspection());
+ui.querySelector('.to-game')!.addEventListener('click', () => {
+  if (game.player) enterGame();
+  else showChoice(true);
+});
+app.addEventListener('click', () => {
+  if (view.driver && !game.frozen) input.lock();
+});
+showChoice(true);
+
 // accroche de contrôle (captures automatiques, inspection en console)
-(window as unknown as { __village: unknown }).__village = { view, village };
+(window as unknown as { __village: unknown }).__village = {
+  view,
+  village,
+  game,
+  input,
+  enterGame,
+  enterInspection,
+  /** contrôle : charge les 40 personnages et renvoie les anomalies de squelette ou d'animation */
+  checkAll: () => Promise.all(VARIANTS.map((v) => loadCharacter(v.id).then((b) => ({ id: v.id, clips: b.clips.size, warnings: b.warnings, height: b.height }), (e) => ({ id: v.id, error: String(e) })))),
+};

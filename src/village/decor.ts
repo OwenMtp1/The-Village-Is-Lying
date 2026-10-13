@@ -8,6 +8,7 @@ import { Batch } from './geom';
 import { BUILDINGS, CEMETERY, FIELDS, GARDENS, PATHS, PLAZA, fieldPoly, heightAt, insideBuilding, localToWorld, pointAt, polygonDistance, roadDistance, rng, type P2 } from './layout';
 import { LANTERN_LIGHT, type PropSet } from './props';
 import { VM } from './textures';
+import type { Obb } from './collision';
 import type { BuiltBuilding, WorldLight } from './buildings';
 
 interface Ctx {
@@ -16,6 +17,7 @@ interface Ctx {
   doors: { x: number; z: number; nx: number; nz: number; w: number }[];
   extra: Batch;
   lavoir?: THREE.Group;
+  solids: Obb[];
 }
 
 /** Point libre : ni bâtiment, ni rue, ni devant une porte. */
@@ -68,8 +70,8 @@ function put(c: Ctx, type: string, x: number, z: number, rot: number, o: { m?: n
   return true;
 }
 
-export function buildDecor(built: BuiltBuilding[], props: PropSet): { lights: WorldLight[]; mesh: THREE.Group } {
-  const c: Ctx = { props, lights: [], doors: built.flatMap((b) => b.doors), extra: new Batch() };
+export function buildDecor(built: BuiltBuilding[], props: PropSet): { lights: WorldLight[]; mesh: THREE.Group; obstacles: Obb[] } {
+  const c: Ctx = { props, lights: [], doors: built.flatMap((b) => b.doors), extra: new Batch(), solids: [] };
   const r = rng(909);
 
   // ── éclairage public : lanternes le long des rues pavées, plus serrées près de la place ──
@@ -222,6 +224,7 @@ export function buildDecor(built: BuiltBuilding[], props: PropSet): { lights: Wo
     fenceLine(c, 'stoneWall', [x0, z0], [x0, z1]);
     for (const sx of [-1, 1]) {
       c.extra.box(VM.stone('#d0c8b8'), [0.6, 2.1, 0.6], [gateX + sx * 1.5, heightAt(gateX, z1) + 1.0, z1]);
+      c.solids.push({ x: gateX + sx * 1.5, z: z1, hx: 0.3, hz: 0.3, rot: 0, y0: heightAt(gateX, z1) - 0.5, y1: heightAt(gateX, z1) + 2.2 });
       c.extra.box(VM.stoneDark(), [0.8, 0.2, 0.8], [gateX + sx * 1.5, heightAt(gateX, z1) + 2.1, z1]);
     }
     lantern(c, gateX + 2.6, z1 + 1.2, Math.PI);
@@ -240,6 +243,7 @@ export function buildDecor(built: BuiltBuilding[], props: PropSet): { lights: Wo
     const mz = z0 + 3;
     const my = heightAt(mx, mz);
     c.extra.box(VM.stone('#cfc6b6'), [3.2, 2.8, 3.0], [mx, my + 1.4, mz]);
+    c.solids.push({ x: mx, z: mz, hx: 1.6, hz: 1.5, rot: 0, y0: my - 0.5, y1: my + 3.4 });
     c.extra.box(VM.slate(), [3.8, 0.2, 2.0], [mx, my + 3.2, mz - 0.75], { rot: [-0.6, 0, 0], uv: 'local' });
     c.extra.box(VM.slate(), [3.8, 0.2, 2.0], [mx, my + 3.2, mz + 0.75], { rot: [0.6, 0, 0], uv: 'local' });
     c.extra.box(VM.planks('#3a2a20'), [1.0, 1.8, 0.08], [mx, my + 0.9, mz + 1.52], { uv: 'local' });
@@ -249,6 +253,7 @@ export function buildDecor(built: BuiltBuilding[], props: PropSet): { lights: Wo
   for (const [x, z, s] of [[-11, -70.5, 1.6], [-58, -190, 1.3], [12, 200, 1.2]] as const) {
     const y = heightAt(x, z);
     c.extra.box(VM.stone('#cfc6b6'), [1.6, 0.5, 1.6], [x, y + 0.25, z]);
+    c.solids.push({ x, z, hx: 0.8, hz: 0.8, rot: 0, y0: y - 0.5, y1: y + 1 + 2.6 * s });
     c.extra.box(VM.stone('#cfc6b6'), [1.0, 0.5, 1.0], [x, y + 0.75, z]);
     c.extra.box(VM.stone('#d8d0c2'), [0.22, 2.6 * s, 0.22], [x, y + 1.0 + 1.3 * s, z]);
     c.extra.box(VM.stone('#d8d0c2'), [1.1 * s, 0.2, 0.2], [x, y + 1.0 + 2.0 * s, z]);
@@ -272,6 +277,12 @@ export function buildDecor(built: BuiltBuilding[], props: PropSet): { lights: Wo
     L.box(VM.roofTiles('#e8cfc0'), [7.2, 0.14, 2.4], [0, 3.4, -1.05], { rot: [0.5, 0, 0], uv: 'local' });
     L.box(VM.roofTiles('#e8cfc0'), [7.2, 0.14, 2.4], [0, 3.4, 1.05], { rot: [-0.5, 0, 0], uv: 'local' });
     for (const k of [-1.5, 0.8]) L.box(VM.stone('#bdb4a4'), [0.9, 0.08, 0.5], [k, 0.62, 1.6], { rot: [0.25, 0, 0] });
+    // margelle du bassin (on n'entre pas dans l'eau) et poteaux
+    for (const [lx, lz, hx, hz] of [[0, 1.6, 3.2, 0.2], [0, -1.6, 3.2, 0.2], [-3, 0, 0.2, 1.8], [3, 0, 0.2, 1.8], [0, 0, 2.8, 1.4]] as const) {
+      const cs = Math.cos(rot);
+      const sn = Math.sin(rot);
+      c.solids.push({ x: x + lx * cs + lz * sn, z: z - lx * sn + lz * cs, hx, hz, rot, y0: y - 0.5, y1: y + 0.62 });
+    }
     const m = L.build('lavoir');
     m.position.set(x, y, z);
     m.rotation.y = rot;
@@ -294,5 +305,5 @@ export function buildDecor(built: BuiltBuilding[], props: PropSet): { lights: Wo
   g.name = 'decor';
   g.add(mesh);
   if (c.lavoir) g.add(c.lavoir);
-  return { lights: c.lights, mesh: g };
+  return { lights: c.lights, mesh: g, obstacles: c.solids };
 }

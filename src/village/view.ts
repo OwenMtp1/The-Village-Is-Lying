@@ -13,6 +13,7 @@ import { OutputPass } from 'three/examples/jsm/postprocessing/OutputPass.js';
 import { BUILDINGS, heightAt, insideBuilding, roadDistance } from './layout';
 import { buildSky, setupAtmosphere, type Atmosphere } from './atmosphere';
 import type { Village } from './village';
+import type { Input } from '../input';
 
 export type Quality = 0 | 1 | 2;
 export type RoofMode = 'auto' | 'visible' | 'masque';
@@ -73,7 +74,8 @@ export class VillageView {
   private orbit: OrbitControls;
   private atmo: Atmosphere;
   private clock = new THREE.Clock();
-  private keys = new Set<string>();
+  /** pilote de la caméra en mode jeu (personnage) ; null = inspection */
+  driver: { update(dt: number): void } | null = null;
   private yaw = 0;
   private pitch = 0;
   private flySpeed = 6;
@@ -95,6 +97,7 @@ export class VillageView {
   constructor(
     readonly container: HTMLElement,
     readonly village: Village,
+    readonly input: Input,
   ) {
     const r = new THREE.WebGLRenderer({ antialias: false, powerPreference: 'high-performance', preserveDrawingBuffer: true });
     r.setPixelRatio(Math.min(window.devicePixelRatio, 1.5));
@@ -203,7 +206,7 @@ export class VillageView {
     const el = this.renderer.domElement;
     el.addEventListener('contextmenu', (e) => e.preventDefault());
     el.addEventListener('pointerdown', (e) => {
-      if (this.mode !== 'vol') return;
+      if (this.mode !== 'vol' || this.driver) return;
       this.dragging = true;
       this.lastPointer = { x: e.clientX, y: e.clientY };
       el.setPointerCapture(e.pointerId);
@@ -221,27 +224,25 @@ export class VillageView {
     el.addEventListener(
       'wheel',
       (e) => {
-        if (this.mode === 'vol') {
+        if (this.mode === 'vol' && !this.driver) {
           this.flySpeed = THREE.MathUtils.clamp(this.flySpeed * (e.deltaY > 0 ? 0.85 : 1.18), 1, 60);
           e.preventDefault();
         }
       },
       { passive: false },
     );
-    window.addEventListener('keydown', this.onKey);
-    window.addEventListener('keyup', this.onKeyUp);
     window.addEventListener('resize', this.onResize);
   }
 
-  private onKey = (e: KeyboardEvent) => {
-    if ((e.target as HTMLElement)?.tagName === 'INPUT') return;
-    this.keys.add(e.code);
-    if (e.code === 'KeyF') this.setMode(this.mode === 'vol' ? 'orbite' : 'vol');
-    if (e.code === 'KeyR') this.setRoofMode(this.roofMode === 'auto' ? 'masque' : this.roofMode === 'masque' ? 'visible' : 'auto');
-    if (['KeyW', 'KeyA', 'KeyS', 'KeyD', 'Space', 'KeyC'].includes(e.code) && this.mode === 'orbite') this.setMode('vol');
-    if (['KeyW', 'KeyA', 'KeyS', 'KeyD', 'Space', 'KeyC'].includes(e.code)) this.tween = null;
-  };
-  private onKeyUp = (e: KeyboardEvent) => this.keys.delete(e.code);
+  /** Raccourcis de l'inspection (lus dans le gestionnaire d'entrées unique). */
+  private inspectionKeys() {
+    const i = this.input;
+    if (i.consume('KeyF')) this.setMode(this.mode === 'vol' ? 'orbite' : 'vol');
+    if (i.consume('KeyR')) this.setRoofMode(this.roofMode === 'auto' ? 'masque' : this.roofMode === 'masque' ? 'visible' : 'auto');
+    const moving = ['KeyW', 'KeyA', 'KeyS', 'KeyD', 'Space', 'KeyC'].some((k) => i.held(k));
+    if (moving && this.mode === 'orbite') this.setMode('vol');
+    if (moving) this.tween = null;
+  }
   private onResize = () => this.resize();
 
   resize() {
@@ -261,8 +262,15 @@ export class VillageView {
     if (this.disposed) return;
     const dt = Math.min(0.05, this.clock.getDelta());
     const cam = this.camera;
+    this.orbit.enabled = !this.driver && this.mode === 'orbite';
 
-    if (this.tween) {
+    if (this.driver) {
+      this.tween = null;
+      this.driver.update(dt);
+    } else this.inspectionKeys();
+    if (this.driver) {
+      // caméra placée par le jeu
+    } else if (this.tween) {
       this.tween.t = Math.min(1, this.tween.t + dt / 1.3);
       const k = this.tween.t * this.tween.t * (3 - 2 * this.tween.t);
       cam.position.lerpVectors(this.tween.from[0], this.tween.to[0], k);
@@ -278,14 +286,14 @@ export class VillageView {
       const fwd = new THREE.Vector3(-Math.sin(this.yaw), 0, -Math.cos(this.yaw));
       const right = new THREE.Vector3(Math.cos(this.yaw), 0, -Math.sin(this.yaw));
       const mv = new THREE.Vector3();
-      if (this.keys.has('KeyW') || this.keys.has('ArrowUp')) mv.add(fwd);
-      if (this.keys.has('KeyS') || this.keys.has('ArrowDown')) mv.sub(fwd);
-      if (this.keys.has('KeyD') || this.keys.has('ArrowRight')) mv.add(right);
-      if (this.keys.has('KeyA') || this.keys.has('ArrowLeft')) mv.sub(right);
-      if (this.keys.has('Space') || this.keys.has('KeyE')) mv.y += 1;
-      if (this.keys.has('KeyC') || this.keys.has('KeyQ')) mv.y -= 1;
+      if (this.input.held('KeyW') || this.input.held('ArrowUp')) mv.add(fwd);
+      if (this.input.held('KeyS') || this.input.held('ArrowDown')) mv.sub(fwd);
+      if (this.input.held('KeyD') || this.input.held('ArrowRight')) mv.add(right);
+      if (this.input.held('KeyA') || this.input.held('ArrowLeft')) mv.sub(right);
+      if (this.input.held('Space') || this.input.held('KeyE')) mv.y += 1;
+      if (this.input.held('KeyC') || this.input.held('KeyQ')) mv.y -= 1;
       if (mv.lengthSq() > 0) {
-        const fast = this.keys.has('ShiftLeft') || this.keys.has('ShiftRight') ? 3 : 1;
+        const fast = this.input.held('ShiftLeft') || this.input.held('ShiftRight') ? 3 : 1;
         cam.position.addScaledVector(mv.normalize(), this.flySpeed * fast * dt);
       }
     } else this.orbit.update();
@@ -293,7 +301,7 @@ export class VillageView {
     // jamais sous le sol (sauf dans une cave : le terrain y est percé)
     const ground = heightAt(cam.position.x, cam.position.z);
     const inCellar = this.village.buildings.some((b) => b.cellarHole && insideBuilding(b.spec, cam.position.x, cam.position.z, -0.3));
-    if (!inCellar && cam.position.y < ground + 0.35) cam.position.y = ground + 0.35;
+    if (!this.driver && !inCellar && cam.position.y < ground + 0.35) cam.position.y = ground + 0.35;
 
     // dans quel bâtiment est la caméra ? (toits auto, lumières intérieures prioritaires)
     this.insideId = null;
@@ -361,8 +369,6 @@ export class VillageView {
   dispose() {
     this.disposed = true;
     this.renderer.setAnimationLoop(null);
-    window.removeEventListener('keydown', this.onKey);
-    window.removeEventListener('keyup', this.onKeyUp);
     window.removeEventListener('resize', this.onResize);
     this.renderer.dispose();
   }

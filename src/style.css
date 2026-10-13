@@ -43,3 +43,28 @@ html, body { margin: 0; height: 100%; overflow: hidden; }
   .hud-top { left: 8px; right: 8px; }
   .stats { display: none; }
 }
+
+/* ── jeu ── */
+.choose { position: fixed; inset: 0; z-index: 8; display: none; place-items: center; background: rgba(4, 6, 10, 0.55); backdrop-filter: blur(3px); }
+.choose.open { display: grid; }
+.choose-box { width: min(440px, calc(100vw - 32px)); background: var(--panel); border: 1px solid var(--line); padding: 24px; text-align: center; }
+.choose-box h1 { margin: 0 0 8px; font-weight: 400; letter-spacing: 0.2em; text-transform: uppercase; font-size: 20px; }
+.choose-box p { color: var(--muted); font-size: 14px; margin: 0 0 18px; }
+.choose-row { display: flex; gap: 12px; }
+.choose-row button { flex: 1; font: inherit; font-size: 17px; padding: 14px 8px; background: rgba(255, 255, 255, 0.04); color: var(--ink); border: 1px solid var(--line); cursor: pointer; }
+.choose-row button:hover { border-color: var(--accent); color: var(--accent); }
+.choose-box button:disabled { opacity: 0.5; cursor: wait; }
+.choose-box .link { margin-top: 14px; background: none; border: 0; color: var(--muted); font: inherit; font-size: 13px; text-decoration: underline; cursor: pointer; }
+.choose-status { min-height: 1.3em; margin-top: 10px; color: var(--accent); font-size: 13px; font-style: italic; }
+.game-hud { display: none; }
+.playing .game-hud { display: block; }
+.playing .panel, .playing .toggle { display: none !important; }
+.who { position: fixed; z-index: 5; left: 16px; bottom: 16px; display: flex; gap: 10px; align-items: center; background: var(--panel); border: 1px solid var(--line); padding: 8px 12px 8px 8px; }
+.who img { width: 38px; height: 76px; object-fit: cover; }
+.who-name { font-size: 16px; }
+.who-sub { font-size: 12px; color: var(--muted); }
+.game-help { position: fixed; z-index: 5; left: 50%; transform: translateX(-50%); bottom: 16px; font-size: 12px; color: var(--muted); text-shadow: 0 1px 4px #000; text-align: center; max-width: calc(100vw - 32px); }
+.game-help kbd { font: 11px ui-monospace, monospace; border: 1px solid var(--line); padding: 0 4px; color: var(--ink); }
+.game-buttons { position: fixed; z-index: 5; right: 16px; bottom: 16px; display: flex; gap: 8px; }
+.game-buttons button { font: inherit; font-size: 13px; background: var(--panel); color: var(--ink); border: 1px solid var(--line); padding: 6px 10px; cursor: pointer; }
+@media (max-width: 640px) { .game-help { display: none; } .who { bottom: 60px; } }

@@ -562,3 +562,40 @@ export const inField = (x: number, z: number, m = 0) => FIELDS.some((f) => inPol
 
 /** Verger (pommiers en rangées) à l'ouest, derrière la rue des Tisserands. */
 export const ORCHARD = { cx: -76, cz: -14, cols: 4, rows: 3, step: 6.5, rot: 0.15 };
+
+// ───────────────────────── relief exact du maillage de terrain ─────────────────────────
+
+/** Résolution du maillage de terrain (partagée par le rendu et les collisions). */
+export const TERRAIN_SEG = 320;
+let grid: Float32Array | null = null;
+
+/** Hauteurs aux sommets du maillage de terrain (calculées une fois). */
+export function terrainGrid(): Float32Array {
+  if (grid) return grid;
+  const n = TERRAIN_SEG + 1;
+  const step = (WORLD_HALF * 2) / TERRAIN_SEG;
+  grid = new Float32Array(n * n);
+  for (let iz = 0; iz < n; iz++) for (let ix = 0; ix < n; ix++) grid[iz * n + ix] = heightAt(-WORLD_HALF + ix * step, -WORLD_HALF + iz * step);
+  return grid;
+}
+
+/**
+ * Hauteur du sol telle que dessinée par le maillage (interpolation dans les mêmes triangles) : les pieds
+ * des personnages touchent exactement la surface visible, même entre deux sommets.
+ */
+export function groundHeight(x: number, z: number): number {
+  const g = terrainGrid();
+  const n = TERRAIN_SEG + 1;
+  const step = (WORLD_HALF * 2) / TERRAIN_SEG;
+  const fx = Math.min(TERRAIN_SEG - 1e-6, Math.max(0, (x + WORLD_HALF) / step));
+  const fz = Math.min(TERRAIN_SEG - 1e-6, Math.max(0, (z + WORLD_HALF) / step));
+  const ix = Math.floor(fx);
+  const iz = Math.floor(fz);
+  const u = fx - ix;
+  const v = fz - iz;
+  const a = g[iz * n + ix];
+  const b = g[(iz + 1) * n + ix];
+  const c = g[(iz + 1) * n + ix + 1];
+  const d = g[iz * n + ix + 1];
+  return u + v <= 1 ? a + (d - a) * u + (b - a) * v : c + (b - c) * (1 - u) + (d - c) * (1 - v);
+}

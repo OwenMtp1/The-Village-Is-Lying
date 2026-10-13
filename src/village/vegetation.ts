@@ -5,6 +5,7 @@
  * Les chemins qui mènent hors du village restent dégagés : la forêt s'ouvre sur eux.
  */
 import * as THREE from 'three';
+import type { Obb } from './collision';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { BUILDINGS, FIELDS, GARDENS, ORCHARD, VILLAGE_CENTER, WORLD_HALF, fieldPoly, forestEdge, heightAt, inField, insideBuilding, isFree, localToWorld, noise2, roadDistance, rng } from './layout';
 
@@ -220,7 +221,7 @@ class Scatter {
 /** Distance minimale d'un arbre à un bâtiment (les houppiers ne traversent pas les toits). */
 const nearBuilding = (x: number, z: number, m: number) => BUILDINGS.some((b) => insideBuilding(b, x, z, m));
 
-export function buildVegetation(): THREE.Group {
+export function buildVegetation(): { group: THREE.Group; obstacles: Obb[] } {
   const g = new THREE.Group();
   g.name = 'vegetation';
   const sc = new Scatter();
@@ -337,6 +338,23 @@ export function buildVegetation(): THREE.Group {
     sc.add('tuft', x, z, 0.6 + r() * 0.7, r() * 6, 0.02);
   }
 
+  // troncs et gros rochers : obstacles (les buissons et l'herbe se traversent)
+  const obstacles: Obb[] = [];
+  const p = new THREE.Vector3();
+  const q = new THREE.Quaternion();
+  const s = new THREE.Vector3();
+  for (const [kind, list] of sc.m) {
+    const trunk = /^(leafy|fir|fruit|dead)/.test(kind) ? 0.3 : kind === 'rock' ? 0.85 : 0;
+    if (!trunk) continue;
+    for (const mm of list) {
+      mm.decompose(p, q, s);
+      if (Math.hypot(p.x - cx, p.z - cz) > 230) continue;
+      const r = trunk * s.x;
+      if (kind === 'rock' && r < 0.45) continue;
+      obstacles.push({ x: p.x, z: p.z, hx: r * 0.75, hz: r * 0.75, rot: 0, y0: p.y - 0.5, y1: p.y + (kind === 'rock' ? 0.7 * s.y : 4), tag: kind });
+    }
+  }
+
   // géométries
   const geos: Record<string, THREE.BufferGeometry> = {
     leafy0: leafyTree(11, ['#4c6a3c', '#16261a']),
@@ -370,5 +388,5 @@ export function buildVegetation(): THREE.Group {
     im.name = `vegetation:${kind}`;
     g.add(im);
   }
-  return g;
+  return { group: g, obstacles };
 }

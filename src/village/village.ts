@@ -11,12 +11,15 @@ import { buildDecor } from './decor';
 import { PropSet } from './props';
 import { buildTerrain, type Terrain } from './terrain';
 import { buildVegetation } from './vegetation';
+import { buildCollisionWorld, type CollisionWorld } from './collision';
 
 export interface Village {
   root: THREE.Group;
   buildings: BuiltBuilding[];
   lights: WorldLight[];
   terrain: Terrain;
+  /** collisions (murs, portes, planchers, escaliers, mobilier, décor, troncs) */
+  collision: CollisionWorld;
   stats: { buildings: number; props: number; lights: number; rooms: number };
 }
 
@@ -85,10 +88,14 @@ export async function buildVillage(progress: (f: number, label: string) => void 
   progress(0.76, 'Forêt et végétation');
   await frame();
   const veg = buildVegetation();
+  progress(0.88, 'Collisions');
+  await frame();
+  const collision = buildCollisionWorld();
+  for (const o of [...props.obstacles(), ...decor.obstacles, ...veg.obstacles]) collision.addObstacle(o);
   progress(0.92, 'Mobilier et objets');
   await frame();
   const propMesh = props.build();
-  root.add(terrain.mesh, propMesh, decor.mesh, veg);
+  root.add(terrain.mesh, propMesh, decor.mesh, veg.group);
   const bgroup = new THREE.Group();
   bgroup.name = 'batiments';
   for (const b of buildings) bgroup.add(b.group);
@@ -99,6 +106,7 @@ export async function buildVillage(progress: (f: number, label: string) => void 
     buildings,
     lights,
     terrain,
+    collision,
     stats: {
       buildings: buildings.length,
       props: props.count(),
