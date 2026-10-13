@@ -117,6 +117,21 @@ export class Batch {
     return this.parts.size === 0;
   }
 
+  /** Géométries fusionnées par matériau (pour l'instanciation) ; le lot est vidé. */
+  geometries(): Map<THREE.Material, THREE.BufferGeometry> {
+    const out = new Map<THREE.Material, THREE.BufferGeometry>();
+    for (const [mat, list] of this.parts) {
+      const merged = mergeGeometries(list, false);
+      for (const p of list) p.dispose();
+      if (merged) {
+        merged.computeBoundingSphere();
+        out.set(mat, merged);
+      }
+    }
+    this.parts.clear();
+    return out;
+  }
+
   build(name: string, opts: { cast?: boolean; receive?: boolean } = {}): THREE.Group {
     const g = new THREE.Group();
     g.name = name;
