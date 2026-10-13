@@ -65,7 +65,7 @@ function colored(g: THREE.BufferGeometry, color: string) {
 }
 
 /** Feuillu : tronc, branches maîtresses, houppier de plusieurs touffes. */
-function leafyTree(seed: number, palette: [string, string]): THREE.BufferGeometry {
+function leafyTree(seed: number, palette: [string, string], detail = 2): THREE.BufferGeometry {
   const parts: THREE.BufferGeometry[] = [];
   const r = rng(seed);
   parts.push(colored(new THREE.CylinderGeometry(0.2, 0.36, 4.2, 7).translate(0, 2.1, 0), '#3e2c1e'));
@@ -81,7 +81,7 @@ function leafyTree(seed: number, palette: [string, string]): THREE.BufferGeometr
     [-0.4, 5.2, 1.3, 1.4],
     [0.6, 4.4, -1.2, 1.3],
   ];
-  blobs.forEach(([x, y, z, s], i) => parts.push(clump(s, seed * 3 + i, palette[0], palette[1]).translate(x, y, z)));
+  blobs.forEach(([x, y, z, s], i) => parts.push(clump(s, seed * 3 + i, palette[0], palette[1], detail).translate(x, y, z)));
   const m = mergeGeometries(parts)!;
   m.computeVertexNormals();
   return m;
@@ -146,7 +146,7 @@ function deadTree(seed: number): THREE.BufferGeometry {
 }
 
 function bushGeo(seed: number, palette: [string, string]) {
-  const parts = [clump(0.9, seed, palette[0], palette[1]).translate(0, 0.55, 0), clump(0.7, seed + 1, palette[0], palette[1]).translate(0.7, 0.4, 0.2), clump(0.6, seed + 2, palette[0], palette[1]).translate(-0.6, 0.38, -0.2)];
+  const parts = [clump(0.9, seed, palette[0], palette[1], 1).translate(0, 0.55, 0), clump(0.7, seed + 1, palette[0], palette[1], 1).translate(0.7, 0.4, 0.2), clump(0.6, seed + 2, palette[0], palette[1], 1).translate(-0.6, 0.38, -0.2)];
   return mergeGeometries(parts)!;
 }
 
@@ -244,7 +244,9 @@ export function buildVegetation(): THREE.Group {
     const conifer = noise2(x * 0.015 + 9, z * 0.015) > 0.52 ? 0.75 : 0.25;
     const k = r();
     const kind = k < 0.012 ? 'dead' : k < conifer ? `fir${Math.floor(r() * 2)}` : `leafy${Math.floor(r() * 3)}`;
-    sc.add(kind, x, z, s, r() * Math.PI * 2, 0.2, 0.9 + r() * 0.35);
+    // au cœur de la forêt : modèle allégé, sans ombre portée (on n'y voit que des silhouettes dans la brume)
+    const far = d > edge + 18 ? '_far' : '';
+    sc.add(kind + far, x, z, s, r() * Math.PI * 2, 0.2, 0.9 + r() * 0.35);
     // sous-bois
     if (r() < 0.5) sc.add(r() < 0.5 ? 'fern' : `bush${Math.floor(r() * 2)}`, x + (r() - 0.5) * 5, z + (r() - 0.5) * 5, 0.7 + r() * 0.8, r() * 6, 0.1);
   }
@@ -327,7 +329,7 @@ export function buildVegetation(): THREE.Group {
     if (!isFree(x, z, 1.2) || roadDistance(x, z).d < 1.5) continue;
     sc.add('rock', x, z, 0.35 + r() * r() * 1.6, r() * 6, 0.25);
   }
-  for (let i = 0; i < 34000; i++) {
+  for (let i = 0; i < 24000; i++) {
     const x = cx + (r() * 2 - 1) * 175;
     const z = cz + (r() * 2 - 1) * 175;
     if (!isFree(x, z, 0.5) || roadDistance(x, z).d < 0.4) continue;
@@ -341,9 +343,13 @@ export function buildVegetation(): THREE.Group {
     leafy1: leafyTree(23, ['#5a6e3a', '#1c2a18']),
     leafy2: leafyTree(37, ['#46603e', '#14221a']),
     fruit: leafyTree(51, ['#5e7a40', '#1c2e1a']),
+    leafy0_far: leafyTree(11, ['#4c6a3c', '#16261a'], 0),
+    leafy1_far: leafyTree(23, ['#5a6e3a', '#1c2a18'], 0),
+    leafy2_far: leafyTree(37, ['#46603e', '#14221a'], 0),
     fir0: firTree(5),
     fir1: firTree(9),
     dead: deadTree(3),
+    dead_far: deadTree(3),
     bush0: bushGeo(7, ['#4a663a', '#16241a']),
     bush1: bushGeo(17, ['#55693a', '#1a2818']),
     deadBush: bushGeo(29, ['#5a5440', '#221e16']),
@@ -353,12 +359,12 @@ export function buildVegetation(): THREE.Group {
   };
   const mats = { solid: vegMat(), rock: new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.95 }) };
   for (const [kind, list] of sc.m) {
-    const geo = geos[kind];
+    const geo = geos[kind] ?? geos[kind.replace('_far', '')];
     const im = new THREE.InstancedMesh(geo, kind === 'rock' ? mats.rock : mats.solid, list.length);
     list.forEach((mm, i) => im.setMatrixAt(i, mm));
     im.instanceMatrix.needsUpdate = true;
     // seuls les arbres et buissons proches du village projettent une ombre (la carte d'ombre suit la caméra)
-    im.castShadow = kind !== 'tuft' && kind !== 'fern';
+    im.castShadow = kind !== 'tuft' && kind !== 'fern' && !kind.endsWith('_far');
     im.receiveShadow = true;
     im.computeBoundingSphere();
     im.name = `vegetation:${kind}`;

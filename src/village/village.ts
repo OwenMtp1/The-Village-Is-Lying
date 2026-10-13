@@ -4,6 +4,7 @@
  * page réactive pendant le chargement).
  */
 import * as THREE from 'three';
+import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { BUILDINGS } from './layout';
 import { buildBuilding, type BuiltBuilding, type WorldLight } from './buildings';
 import { buildDecor } from './decor';
@@ -17,6 +18,45 @@ export interface Village {
   lights: WorldLight[];
   terrain: Terrain;
   stats: { buildings: number; props: number; lights: number; rooms: number };
+}
+
+/**
+ * Façades fusionnées par quartier et par matériau : quelques dizaines d'appels de dessin au lieu de plusieurs
+ * centaines. Les intérieurs et les toits restent par bâtiment (masquables individuellement).
+ */
+function mergeFacades(buildings: BuiltBuilding[]): THREE.Group {
+  const chunks = new Map<string, Map<THREE.Material, THREE.BufferGeometry[]>>();
+  for (const b of buildings) {
+    const ext = b.group.getObjectByName('exterieur');
+    if (!ext) continue;
+    let byMat = chunks.get(b.spec.district);
+    if (!byMat) chunks.set(b.spec.district, (byMat = new Map()));
+    for (const o of ext.children) {
+      const m = o as THREE.Mesh;
+      const g = m.geometry.clone().applyMatrix4(b.matrix);
+      const mat = m.material as THREE.Material;
+      let list = byMat.get(mat);
+      if (!list) byMat.set(mat, (list = []));
+      list.push(g);
+      m.geometry.dispose();
+    }
+    b.group.remove(ext);
+  }
+  const g = new THREE.Group();
+  g.name = 'facades';
+  for (const [district, byMat] of chunks)
+    for (const [mat, list] of byMat) {
+      const merged = mergeGeometries(list, false);
+      for (const l of list) l.dispose();
+      if (!merged) continue;
+      merged.computeBoundingSphere();
+      const mesh = new THREE.Mesh(merged, mat);
+      mesh.name = `facades:${district}`;
+      mesh.castShadow = true;
+      mesh.receiveShadow = true;
+      g.add(mesh);
+    }
+  return g;
 }
 
 const frame = () => new Promise<void>((r) => requestAnimationFrame(() => r()));
@@ -52,7 +92,7 @@ export async function buildVillage(progress: (f: number, label: string) => void 
   const bgroup = new THREE.Group();
   bgroup.name = 'batiments';
   for (const b of buildings) bgroup.add(b.group);
-  root.add(bgroup);
+  root.add(bgroup, mergeFacades(buildings));
   const lights = [...buildings.flatMap((b) => b.lights), ...decor.lights];
   return {
     root,

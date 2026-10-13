@@ -80,7 +80,7 @@ positions des portes, des pièces, des escaliers et du mobilier (fouilles, dépl
 - Lumières chaudes : un groupe fixe de 16 lumières réaffecté aux sources les plus proches de la caméra
   (lanternes, âtres, bougies) ; les autres restent visibles par leurs matériaux lumineux et le halo.
 - Une seule lumière à ombres (la lune), dont la carte suit la zone regardée. Brouillard plus dense au sol.
-- Intérieurs masqués au-delà de 90 m ; terrain percé au droit des caves.
+- Intérieurs masqués au-delà de 55 m ; façades fusionnées par quartier ; arbres du cœur de la forêt allégés et sans ombre ; terrain percé au droit des caves.
 - Qualité **haute** (occlusion ambiante GTAO, ombres 4096), **moyenne** (halo, ombres 2048), **basse** (rendu direct, sans ombres).
 
 ## Ressources

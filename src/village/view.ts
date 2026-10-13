@@ -309,7 +309,7 @@ export class VillageView {
       const eaves = new THREE.Vector3().setFromMatrixPosition(b.matrix).y + b.plan.wallTop;
       const over = cam.position.y > eaves + 1 && d < Math.max(b.spec.w, b.spec.d) / 2 + 5;
       b.roof.visible = this.roofMode === 'visible' ? true : this.roofMode === 'masque' ? false : !over;
-      b.interior.visible = d < 90;
+      b.interior.visible = d < 55;
     }
     if (this.insideId !== this.lastInside) {
       this.lastInside = this.insideId;

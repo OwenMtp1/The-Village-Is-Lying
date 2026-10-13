@@ -824,7 +824,7 @@ export function buildBuilding(b: BuildingSpec, props: PropSet): BuiltBuilding {
       props.place('wallLantern', p[0], p[1], p[2], rotWorld, true);
       const lp = LANTERN_LIGHT.wallLantern;
       const w = toWorld(F.at(u, y + lp[1], lp[2]));
-      lights.push({ x: w[0], y: w[1], z: w[2], color: '#ffb35c', intensity: 6, distance: 11, flicker: true, indoor: false, building: b.id });
+      lights.push({ x: w[0], y: w[1], z: w[2], color: '#ffb35c', intensity: 4, distance: 11, flicker: true, indoor: false, building: b.id });
     };
     const busy = ['tavern', 'sheriff', 'church', 'apothecary', 'shop', 'bakery', 'forge', 'stable'].includes(b.kind);
     if (busy) {
