@@ -91,6 +91,8 @@ export const CAMERA = {
   maxPitch: 1.1,
   /** sensibilité de la souris (rad par pixel) */
   sensitivity: 0.0024,
+  /** souris vers le haut = regarder vers le bas (réglage du joueur) */
+  invertY: false as boolean,
   /** lissage du suivi (1/s) : la caméra suit sans rigidité excessive */
   follow: 18,
   /** première personne : limites du regard vertical */

@@ -3,7 +3,7 @@
  * Le jeton de reconnexion est gardé pour l'onglet : une page rechargée retrouve sa place dans la partie.
  */
 import { io, type Socket } from 'socket.io-client';
-import type { ClientToServer, GameView, LobbyView, PlayerPose, PrivateInfo, ServerToClient } from '../shared/protocol';
+import type { ClientToServer, GameEvent, GameView, LobbyView, PlayerPose, PrivateInfo, ServerToClient } from '../shared/protocol';
 import type { Composition } from '../shared/roles';
 import type { Sex } from '../characters/catalog';
 
@@ -25,7 +25,7 @@ class Net {
   me = '';
   connected = false;
   private listeners = new Set<Listener>();
-  onEvent: (e: { text: string; kind: 'info' | 'mort' | 'reunion' | 'fin' }) => void = () => {};
+  onEvent: (e: GameEvent) => void = () => {};
 
   constructor() {
     this.socket = io({ autoConnect: false, transports: ['websocket', 'polling'] });
@@ -132,6 +132,9 @@ class Net {
   }
   setComposition(composition: Composition) {
     return this.call('salon:composition', { composition });
+  }
+  setReady(ready: boolean) {
+    return this.call('salon:pret', { ready });
   }
   setSex(sex: Sex) {
     return this.call('salon:sexe', { sex });

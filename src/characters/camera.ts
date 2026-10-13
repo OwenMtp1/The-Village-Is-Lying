@@ -32,7 +32,7 @@ export class PlayerCamera {
     const min = this.mode === 'subjective' ? CAMERA.fpMinPitch : CAMERA.minPitch;
     const max = this.mode === 'subjective' ? CAMERA.fpMaxPitch : CAMERA.maxPitch;
     // tangage : souris vers le bas = regarder vers le bas, dans les deux vues
-    this.pitch = THREE.MathUtils.clamp(this.pitch - dy * CAMERA.sensitivity, -max, -min);
+    this.pitch = THREE.MathUtils.clamp(this.pitch - dy * CAMERA.sensitivity * (CAMERA.invertY ? -1 : 1), -max, -min);
     if (this.mode === 'troisieme' && wheel) this.distance = THREE.MathUtils.clamp(this.distance + wheel * 0.0035, CAMERA.minDistance, CAMERA.maxDistance);
   }
 

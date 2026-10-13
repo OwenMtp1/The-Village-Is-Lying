@@ -15,13 +15,13 @@ import { assignAppearances } from '../characters/appearance';
 import type { Sex } from '../characters/catalog';
 import { compositionErrors, campOf, startBlocker, totalOf, type Composition, type Role } from '../shared/roles';
 import { RULES, assignRoles, winnerOf, type Winner } from '../shared/rules';
-import type { GameView, LobbyView, PlayerPose, PrivateInfo } from '../shared/protocol';
+import type { EventKind, GameView, LobbyView, PlayerPose, PrivateInfo } from '../shared/protocol';
 
 export interface RoomOutput {
   lobby(view: LobbyView): void;
   game(view: GameView): void;
   secret(playerId: string, info: PrivateInfo): void;
-  event(text: string, kind: 'info' | 'mort' | 'reunion' | 'fin', to?: string): void;
+  event(text: string, kind: EventKind, to?: string): void;
 }
 
 interface Member {
@@ -31,6 +31,8 @@ interface Member {
   token: string;
   connected: boolean;
   joinedAt: number;
+  /** « prêt » affiché au salon (indication pour l'hôte, ne bloque pas le lancement) */
+  ready: boolean;
 }
 
 interface Secret {
@@ -107,7 +109,7 @@ export class Room {
     const n = this.players.size;
     if (n >= this.seats) throw new RoomError(`Salon complet (${n} / ${this.seats} joueurs).`);
     const clean = String(name ?? '').trim().slice(0, 20) || `Joueur ${n + 1}`;
-    const m: Member = { id: randomBytes(4).toString('hex'), name: clean, sex: sex === 'F' ? 'F' : 'M', token: randomBytes(16).toString('hex'), connected: true, joinedAt: this.seq++ };
+    const m: Member = { id: randomBytes(4).toString('hex'), name: clean, sex: sex === 'F' ? 'F' : 'M', token: randomBytes(16).toString('hex'), connected: true, joinedAt: this.seq++, ready: false };
     this.players.set(m.id, m);
     if (!this.hostId) this.hostId = m.id;
     this.publish();
@@ -141,6 +143,12 @@ export class Room {
     this.publish();
   }
 
+  setReady(id: string, ready: boolean) {
+    if (this.phase !== 'salon') throw new RoomError('La partie a commencé.');
+    this.must(id).ready = ready === true;
+    this.publish();
+  }
+
   /** Modification de la composition par l'hôte, avant le lancement. */
   setComposition(id: string, comp: Composition) {
     if (id !== this.hostId) throw new RoomError('Seul l’hôte peut modifier la composition.');
@@ -158,7 +166,7 @@ export class Room {
       code: this.code,
       composition: { ...this.composition },
       seats: this.seats,
-      players: [...this.players.values()].sort((a, b) => a.joinedAt - b.joinedAt).map((p) => ({ id: p.id, name: p.name, sex: p.sex, connected: p.connected, host: p.id === this.hostId })),
+      players: [...this.players.values()].sort((a, b) => a.joinedAt - b.joinedAt).map((p) => ({ id: p.id, name: p.name, sex: p.sex, connected: p.connected, host: p.id === this.hostId, ready: p.ready })),
       blocker: this.phase === 'partie' ? 'Partie en cours.' : !this.hostId ? 'Aucun hôte : le salon ne peut pas être lancé.' : startBlocker(this.composition, this.connectedCount),
       phase: this.phase,
     };
@@ -288,7 +296,7 @@ export class Room {
     const innocent = campOf(this.secrets.get(target)!.role) === 'innocents';
     this.kill(target);
     this.log.push(`Un coup de feu : ${this.name(target)} est mort.`);
-    this.out.event(`Un coup de feu retentit dans le village : ${this.name(target)} est mort.`, 'mort');
+    this.out.event(`Un coup de feu retentit dans le village : ${this.name(target)} est mort.`, 'tir');
     if (innocent && RULES.sheriffDiesOnMistake) {
       this.kill(id);
       this.log.push(`${this.name(id)} a abattu un innocent et l’a payé de sa vie.`);
@@ -447,6 +455,7 @@ export class Room {
       this.hostId = next?.id ?? '';
     }
     this.resetGame();
+    for (const m of this.players.values()) m.ready = false;
     this.phase = 'salon';
     this.publish();
   }

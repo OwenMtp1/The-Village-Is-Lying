@@ -78,6 +78,8 @@ export class VillageView {
   driver: { update(dt: number): void } | null = null;
   /** lumière du jour (0 nuit, 1 jour) fournie par la partie en cours ; nuit en inspection */
   daylightSource: (() => number) | null = null;
+  /** appelé à chaque image après l'atmosphère, avant le rendu (vie du décor, sons d'ambiance) */
+  afterAtmosphere: ((dt: number, daylight: number) => void) | null = null;
   private yaw = 0;
   private pitch = 0;
   private flySpeed = 6;
@@ -331,6 +333,7 @@ export class VillageView {
     this.bloom.strength = THREE.MathUtils.lerp(0.55, 0.18, daylight);
     const focus = this.mode === 'orbite' ? this.orbit.target : cam.position.clone().add(cam.getWorldDirection(new THREE.Vector3()).multiplyScalar(25));
     this.atmo.update(dt, cam, focus, this.insideId);
+    this.afterAtmosphere?.(dt, daylight);
 
     this.renderer.info.reset();
     if (this.quality === 2) this.renderer.render(this.scene, cam);

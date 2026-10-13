@@ -10,7 +10,7 @@ import express from 'express';
 import { Server } from 'socket.io';
 import { Room, RoomError, type SightTest } from './room';
 import { buildCollisionWorld, type CollisionWorld } from '../village/collision';
-import type { ClientToServer, ServerToClient, Ack } from '../shared/protocol';
+import type { ClientToServer, ServerToClient, Ack, EventKind } from '../shared/protocol';
 
 const LETTERS = 'ABCDEFGHJKLMNPQRSTUVWXYZ';
 
@@ -50,7 +50,7 @@ export function createGameServer(opts: { staticDir?: string } = {}): GameServer 
       const sid = sockets.get(pid);
       if (sid) io.to(sid).emit('jeu:secret', info);
     },
-    event: (text: string, kind: 'info' | 'mort' | 'reunion' | 'fin', to?: string) => {
+    event: (text: string, kind: EventKind, to?: string) => {
       if (to) {
         const sid = sockets.get(to);
         if (sid) io.to(sid).emit('jeu:evenement', { text, kind });
@@ -120,6 +120,7 @@ export function createGameServer(opts: { staticDir?: string } = {}): GameServer 
     };
     socket.on('salon:composition', (p, ack) => guard(ack, () => need().setComposition(pid, p?.composition)));
     socket.on('salon:sexe', (p, ack) => guard(ack, () => need().setSex(pid, p?.sex)));
+    socket.on('salon:pret', (p, ack) => guard(ack, () => need().setReady(pid, p?.ready === true)));
     socket.on('salon:lancer', (_p, ack) => guard(ack, () => need().start(pid)));
     socket.on('salon:quitter', () => leaveCurrent(true));
     socket.on('salon:retour', (_p, ack) => guard(ack, () => need().backToLobby(pid)));

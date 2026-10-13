@@ -27,6 +27,8 @@ interface Remote {
 export interface Prompt {
   key: string;
   label: string;
+  /** action pas encore possible (délai) : affichée en retrait */
+  waiting?: boolean;
   action: () => Promise<unknown>;
 }
 
@@ -43,7 +45,9 @@ export class OnlineGame {
   private sendAcc = 0;
   /** actions possibles à cet instant (affichées par l'interface) */
   prompts: Prompt[] = [];
-  onFeedback: (text: string, bad?: boolean) => void = () => {};
+  onFeedback: (text: string, kind?: 'info' | 'bad' | 'indice') => void = () => {};
+  /** menu de pause ouvert : le personnage ne bouge plus (la partie continue pour les autres) */
+  paused = false;
 
   constructor(
     readonly village: Village,
@@ -115,6 +119,17 @@ export class OnlineGame {
     this.torches.off();
   }
 
+  /** Personnages en mouvement (sons de pas) : le joueur s'il est vivant, les autres joueurs vivants. */
+  walkers() {
+    const out: { id: string; x: number; y: number; z: number; grounded: boolean; local: boolean }[] = [];
+    const g = net.game;
+    if (!g || !this.player) return out;
+    const c = this.player.controller;
+    if (this.alive) out.push({ id: net.me, x: c.x, y: c.y, z: c.z, grounded: c.grounded, local: true });
+    for (const [id, r] of this.remotes) if (g.alive[id]) out.push({ id, x: r.pos.x, y: r.pos.y, z: r.pos.z, grounded: r.grounded, local: false });
+    return out;
+  }
+
   private get alive() {
     return !!net.game?.alive[net.me];
   }
@@ -124,10 +139,10 @@ export class OnlineGame {
     const p = this.player;
     if (!g || !p) return;
     const playing = g.phase === 'jeu';
-    const frozen = !playing;
+    const frozen = !playing || this.paused;
     const m = this.input.takeMouse();
     if (!frozen) this.cam.look(m.dx, m.dy, m.wheel);
-    if (this.input.consume('KeyV')) this.cam.toggle(p);
+    if (!this.paused && this.input.consume('KeyV')) this.cam.toggle(p);
     p.update(dt, readMove(this.input, this.cam, frozen), this.cam.mode === 'subjective' ? this.cam.yaw : null);
     // éliminé : le joueur suit la partie en fantôme (corps invisible, plus aucune position envoyée)
     p.root.visible = this.alive && p.root.visible;
@@ -155,8 +170,8 @@ export class OnlineGame {
     if (!this.alive) p.root.visible = false;
     this.updatePrompts();
     for (const pr of this.prompts)
-      if (this.input.consume(pr.key))
-        pr.action().catch((e: Error) => this.onFeedback(e.message, true));
+      if (!this.paused && this.input.consume(pr.key))
+        pr.action().catch((e: Error) => this.onFeedback(e.message, 'bad'));
   }
 
   private updateRemotes(dt: number) {
@@ -206,7 +221,7 @@ export class OnlineGame {
         anim.root.rotation.set(-Math.PI / 2, b.yaw, 0, 'YXZ');
         this.scene.add(anim.root);
         this.bodies.set(b.id, anim);
-      }, (e: Error) => this.onFeedback(`Corps non affiché (modèle introuvable) : ${e.message}`, true));
+      }, (e: Error) => this.onFeedback(`Corps non affiché (modèle introuvable) : ${e.message}`, 'bad'));
     }
   }
 
@@ -227,7 +242,7 @@ export class OnlineGame {
     if (s.role === 'tueur') {
       const t = others.find((o) => !s.allies.includes(o.id) && o.d <= RULES.killRange);
       const wait = Math.ceil((s.killReadyAt - serverNow()) / 1000);
-      if (t) this.prompts.push({ key: 'KeyE', label: wait > 0 ? `Éliminer ${name(t.id)} (dans ${wait} s)` : `Éliminer ${name(t.id)}`, action: () => net.eliminate(t.id) });
+      if (t) this.prompts.push({ key: 'KeyE', label: wait > 0 ? `Éliminer ${name(t.id)} (dans ${wait} s)` : `Éliminer ${name(t.id)}`, waiting: wait > 0, action: () => net.eliminate(t.id) });
     }
     if (s.role === 'sherif' && s.ammo > 0) {
       // on tire sur la personne visée (devant la caméra), à portée
@@ -240,7 +255,7 @@ export class OnlineGame {
         this.prompts.push({
           key: 'KeyR',
           label: `Enquêter sur ${name(t.id)}`,
-          action: () => net.investigate(t.id).then((r) => this.onFeedback(`Votre enquête : ${name(t.id)} ${r.killer ? 'EST un tueur.' : 'n’est pas un tueur.'}`)),
+          action: () => net.investigate(t.id).then((r) => this.onFeedback(`Indice — votre enquête : ${name(t.id)} ${r.killer ? 'EST un tueur.' : 'n’est pas un tueur.'}`, 'indice')),
         });
     }
     const body = g.bodies.find((b) => !b.reported && Math.hypot(b.x - me.x, b.z - me.z) <= RULES.reportRange);

@@ -12,6 +12,7 @@ export interface LobbyPlayer {
   sex: Sex;
   connected: boolean;
   host: boolean;
+  ready: boolean;
 }
 
 /** État public d'un salon. */
@@ -73,6 +74,13 @@ export interface PrivateInfo {
   findings: Record<string, boolean>;
 }
 
+/** Annonce publique ou privée : `tir` = coup de feu entendu de tous (son), `indice` = résultat d'enquête. */
+export type EventKind = 'info' | 'mort' | 'reunion' | 'fin' | 'tir' | 'indice';
+export interface GameEvent {
+  text: string;
+  kind: EventKind;
+}
+
 export type Ack<T = unknown> = (r: { ok: true; data: T } | { ok: false; error: string }) => void;
 
 export interface ClientToServer {
@@ -80,6 +88,7 @@ export interface ClientToServer {
   'salon:rejoindre': (p: { code: string; name: string; sex: Sex; token?: string }, ack: Ack<{ code: string; playerId: string; token: string }>) => void;
   'salon:composition': (p: { composition: Composition }, ack: Ack) => void;
   'salon:sexe': (p: { sex: Sex }, ack: Ack) => void;
+  'salon:pret': (p: { ready: boolean }, ack: Ack) => void;
   'salon:lancer': (p: Record<string, never>, ack: Ack) => void;
   'salon:quitter': () => void;
   'salon:retour': (p: Record<string, never>, ack: Ack) => void;
@@ -97,5 +106,5 @@ export interface ServerToClient {
   'jeu:etat': (v: GameView) => void;
   'jeu:secret': (v: PrivateInfo) => void;
   'jeu:poses': (p: Record<string, PlayerPose>) => void;
-  'jeu:evenement': (e: { text: string; kind: 'info' | 'mort' | 'reunion' | 'fin' }) => void;
+  'jeu:evenement': (e: GameEvent) => void;
 }
