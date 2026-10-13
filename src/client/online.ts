@@ -36,8 +36,10 @@ export class OnlineGame {
   readonly cam: PlayerCamera;
   player: Character | null = null;
   private remotes = new Map<string, Remote>();
-  private bodies = new Map<string, CharacterAnimator>();
+  private bodies = new Map<string, CharacterAnimator | null>();
   private loading = false;
+  /** incrémenté à chaque nettoyage : un chargement terminé après coup n'ajoute rien à la scène */
+  private generation = 0;
   private sendAcc = 0;
   /** actions possibles à cet instant (affichées par l'interface) */
   prompts: Prompt[] = [];
@@ -73,9 +75,11 @@ export class OnlineGame {
     const g = net.game;
     if (!g || this.player || this.loading) return;
     this.loading = true;
+    const gen = this.generation;
     try {
       const ids = Object.keys(g.appearances);
       const bases = await Promise.all(ids.map((id) => loadCharacter(g.appearances[id])));
+      if (gen !== this.generation || this.player) return;
       const world = this.village.collision;
       ids.forEach((id, i) => {
         const p = net.poses[id] ?? { x: -2, y: 0, z: 6, yaw: Math.PI };
@@ -99,11 +103,12 @@ export class OnlineGame {
   }
 
   dispose() {
+    this.generation++;
     this.player?.dispose();
     this.player = null;
     for (const r of this.remotes.values()) r.anim.dispose();
     this.remotes.clear();
-    for (const b of this.bodies.values()) b.dispose();
+    for (const b of this.bodies.values()) b?.dispose();
     this.bodies.clear();
     this.prompts = [];
     this.torch = false;
@@ -190,8 +195,10 @@ export class OnlineGame {
     for (const b of g.bodies) {
       if (this.bodies.has(b.id)) continue;
       const appearance = g.appearances[b.id];
-      void loadCharacter(appearance).then((base) => {
-        if (this.bodies.has(b.id) || !net.game) return;
+      const gen = this.generation;
+      this.bodies.set(b.id, null);
+      loadCharacter(appearance).then((base) => {
+        if (gen !== this.generation || this.bodies.get(b.id) || !net.game) return;
         const anim = new CharacterAnimator(base);
         anim.update(0.016, { speed: 0, direction: 1, turnRate: 0, grounded: true, vy: 0 });
         const y = this.village.collision.groundAt(b.x, b.z, b.y + 0.5);
@@ -199,9 +206,8 @@ export class OnlineGame {
         anim.root.rotation.set(-Math.PI / 2, b.yaw, 0, 'YXZ');
         this.scene.add(anim.root);
         this.bodies.set(b.id, anim);
-      });
+      }, (e: Error) => this.onFeedback(`Corps non affiché (modèle introuvable) : ${e.message}`, true));
     }
-    for (const [id, a] of this.bodies) if (!g.bodies.some((b) => b.id === id) || g.phase === 'reunion') a.root.visible = g.bodies.some((b) => b.id === id);
   }
 
   /** Actions disponibles selon le rôle et les personnes à portée (le serveur revérifie tout). */
@@ -243,5 +249,5 @@ export class OnlineGame {
   }
 }
 
-/** Horloge serveur approchée (les délais sont des horodatages serveur ; même machine en local). */
-export const serverNow = () => Date.now();
+/** Horloge du serveur (les délais sont des horodatages serveur), corrigée de l'écart mesuré. */
+export const serverNow = () => net.serverNow();

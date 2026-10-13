@@ -207,6 +207,21 @@ export class CollisionWorld {
     }
     return !this.inHole(x, z) && y < groundHeight(x, z) + pad;
   }
+
+  /**
+   * Ligne de vue entre deux points (tir, élimination, enquête) : aucun mur, plancher, relief ou objet plein
+   * sur le segment, échantillonné tous les `step` mètres (les extrémités, sur les personnages, sont exclues).
+   */
+  lineClear(x0: number, y0: number, z0: number, x1: number, y1: number, z1: number, step = 0.2): boolean {
+    const d = Math.hypot(x1 - x0, y1 - y0, z1 - z0);
+    const n = Math.ceil(d / step);
+    for (let i = 1; i < n; i++) {
+      const t = i / n;
+      if (t * d < 0.35 || (1 - t) * d < 0.35) continue;
+      if (this.blocksPoint(x0 + (x1 - x0) * t, y0 + (y1 - y0) * t, z0 + (z1 - z0) * t, 0)) return false;
+    }
+    return true;
+  }
 }
 
 // ───────────────────────── construction depuis le plan du village ─────────────────────────

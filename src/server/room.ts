@@ -45,6 +45,10 @@ interface Secret {
 export class RoomError extends Error {}
 
 const cryptoRandom = () => randomInt(0, 2 ** 31) / 2 ** 31;
+
+/** Point de visée : la poitrine d'un personnage (m au-dessus des pieds). */
+const CHEST = 1.3;
+export type SightTest = (a: { x: number; y: number; z: number }, b: { x: number; y: number; z: number }) => boolean;
 const SPAWN_RADIUS = 6.5;
 
 export class Room {
@@ -71,6 +75,8 @@ export class Room {
     private out: RoomOutput,
     private now: () => number = Date.now,
     private random: () => number = cryptoRandom,
+    /** ligne de vue (murs, planchers, relief) : le serveur de jeu fournit celle du village */
+    private sight: SightTest = () => true,
   ) {
     const errs = compositionErrors(composition);
     if (errs.length) throw new RoomError(errs[0]);
@@ -169,7 +175,7 @@ export class Room {
     const ids = [...this.players.keys()];
     const roles = assignRoles(ids, this.composition, this.random);
     const t = this.now();
-    this.secrets.clear();
+    this.resetGame();
     for (const pid of ids)
       this.secrets.set(pid, {
         role: roles[pid],
@@ -183,8 +189,7 @@ export class Room {
       ids.map((pid) => ({ playerId: pid, sex: this.players.get(pid)!.sex })),
       Math.floor(this.random() * 2 ** 31),
     );
-    this.alive = new Map(ids.map((pid) => [pid, true]));
-    this.poses.clear();
+    for (const pid of ids) this.alive.set(pid, true);
     // apparition en cercle autour du puits de la place
     shuffleInPlace(ids, this.random).forEach((pid, i) => {
       const a = (i / ids.length) * Math.PI * 2;
@@ -192,11 +197,6 @@ export class Room {
       const z = 0.5 + Math.sin(a) * SPAWN_RADIUS;
       this.poses.set(pid, { x, y: 0, z, yaw: Math.atan2(-2 - x, 0.5 - z), speed: 0, grounded: true, vy: 0, dir: 1, torch: false, pitch: 0, t: t });
     });
-    this.bodies = [];
-    this.meeting = null;
-    this.log = [];
-    this.result = null;
-    this.gamePhase = 'jeu';
     this.phase = 'partie';
     this.startedAt = t;
     this.publish();
@@ -228,6 +228,13 @@ export class Room {
     const q = this.poses.get(b);
     if (!p || !q) return Infinity;
     return Math.hypot(p.x - q.x, p.z - q.z, (p.y - q.y) * 1.5);
+  }
+  /** Les deux joueurs se voient-ils (poitrine à poitrine) ? */
+  private seen(a: string, b: string) {
+    const p = this.poses.get(a);
+    const q = this.poses.get(b);
+    if (!p || !q) return false;
+    return this.sight({ x: p.x, y: p.y + CHEST, z: p.z }, { x: q.x, y: q.y + CHEST, z: q.z });
   }
   private name(id: string) {
     return this.players.get(id)?.name ?? '?';
@@ -261,6 +268,7 @@ export class Room {
     if (this.secrets.get(target)?.role === 'tueur') throw new RoomError('C’est un autre tueur.');
     if (this.now() < s.killReadyAt) throw new RoomError(`Patience : encore ${Math.ceil((s.killReadyAt - this.now()) / 1000)} s.`);
     if (this.dist(id, target) > RULES.killRange) throw new RoomError('Trop loin.');
+    if (!this.seen(id, target)) throw new RoomError('Un obstacle vous sépare de votre cible.');
     s.killReadyAt = this.now() + RULES.killCooldown * 1000;
     this.kill(target);
     this.sendSecret(id);
@@ -275,6 +283,7 @@ export class Room {
     if (s.ammo <= 0) throw new RoomError('Vous n’avez plus de balle.');
     if (target === id || !this.alive.get(target)) throw new RoomError('Cible invalide.');
     if (this.dist(id, target) > RULES.shootRange) throw new RoomError('Trop loin pour tirer.');
+    if (!this.seen(id, target)) throw new RoomError('Pas de ligne de tir : un obstacle vous sépare de la cible.');
     s.ammo--;
     const innocent = campOf(this.secrets.get(target)!.role) === 'innocents';
     this.kill(target);
@@ -297,6 +306,7 @@ export class Room {
     if (s.investigations <= 0) throw new RoomError('Vous avez déjà mené votre enquête.');
     if (target === id || !this.alive.get(target)) throw new RoomError('Cible invalide.');
     if (this.dist(id, target) > RULES.investigateRange) throw new RoomError('Approchez-vous pour enquêter.');
+    if (!this.seen(id, target)) throw new RoomError('Un obstacle vous sépare de cette personne.');
     s.investigations--;
     const killer = this.secrets.get(target)!.role === 'tueur';
     s.findings[target] = killer;
@@ -410,11 +420,48 @@ export class Room {
     this.phase = 'fin';
     const roles: Record<string, Role> = {};
     for (const [pid, s] of this.secrets) roles[pid] = s.role;
-    this.result = { winner: w, roles };
-    const text = w === 'tueurs' ? 'Les tueurs ont gagné : ils sont désormais aussi nombreux que les innocents.' : 'Les innocents ont gagné : tous les tueurs ont été éliminés.';
+    const alive = [...this.alive].filter(([, a]) => a).map(([pid]) => pid);
+    const nTueurs = alive.filter((pid) => roles[pid] === 'tueur').length;
+    const reason =
+      w === 'tueurs'
+        ? `Il reste ${nTueurs} tueur${nTueurs > 1 ? 's' : ''} pour ${alive.length - nTueurs} innocent${alive.length - nTueurs > 1 ? 's' : ''} : les innocents ne peuvent plus l’emporter au vote.`
+        : 'Tous les tueurs ont été éliminés.';
+    this.result = { winner: w, roles, reason, survivors: alive };
+    const text = w === 'tueurs' ? `Les tueurs ont gagné. ${reason}` : `Les innocents ont gagné. ${reason}`;
     this.log.push(text);
     this.out.event(text, 'fin');
     this.publish();
+  }
+
+  /**
+   * Fin de partie → retour au salon (n'importe quel joueur, après avoir lu les résultats) : l'état de la
+   * partie est entièrement effacé, les joueurs partis libèrent leur place, l'hôte peut relancer.
+   */
+  backToLobby(id: string) {
+    this.must(id);
+    if (this.phase === 'salon') return;
+    if (this.phase !== 'fin') throw new RoomError('La partie est en cours.');
+    for (const [pid, m] of this.players) if (!m.connected) this.players.delete(pid);
+    if (!this.players.has(this.hostId)) {
+      const next = [...this.players.values()].sort((a, b) => a.joinedAt - b.joinedAt)[0];
+      this.hostId = next?.id ?? '';
+    }
+    this.resetGame();
+    this.phase = 'salon';
+    this.publish();
+  }
+
+  private resetGame() {
+    this.secrets.clear();
+    this.alive.clear();
+    this.poses.clear();
+    this.appearances = {};
+    this.bodies = [];
+    this.meeting = null;
+    this.log = [];
+    this.result = null;
+    this.gamePhase = 'jeu';
+    this.startedAt = 0;
   }
 
   gameView(): GameView {

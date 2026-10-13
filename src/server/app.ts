@@ -8,7 +8,8 @@ import { join } from 'node:path';
 import { randomInt } from 'node:crypto';
 import express from 'express';
 import { Server } from 'socket.io';
-import { Room, RoomError } from './room';
+import { Room, RoomError, type SightTest } from './room';
+import { buildCollisionWorld, type CollisionWorld } from '../village/collision';
 import type { ClientToServer, ServerToClient, Ack } from '../shared/protocol';
 
 const LETTERS = 'ABCDEFGHJKLMNPQRSTUVWXYZ';
@@ -29,6 +30,9 @@ export function createGameServer(opts: { staticDir?: string } = {}): GameServer 
   const http = createServer(app);
   const io = new Server<ClientToServer, ServerToClient>(http, { cors: { origin: true }, maxHttpBufferSize: 16_000 });
   const rooms = new Map<string, Room>();
+  // le village (murs, planchers, relief) sert à vérifier les lignes de vue (construit une fois, ~80 ms)
+  const world: CollisionWorld = buildCollisionWorld();
+  const sight: SightTest = (a, b) => world.lineClear(a.x, a.y, a.z, b.x, b.y, b.z);
   /** joueur → socket (messages privés) */
   const sockets = new Map<string, string>();
 
@@ -93,7 +97,7 @@ export function createGameServer(opts: { staticDir?: string } = {}): GameServer 
       guard(ack, () => {
         leaveCurrent(true);
         const code = newCode();
-        const r = new Room(code, p?.composition, output(code));
+        const r = new Room(code, p?.composition, output(code), Date.now, undefined, sight);
         const m = r.join(p?.name, p?.sex);
         rooms.set(code, r);
         attach(r, m.id);
@@ -118,6 +122,7 @@ export function createGameServer(opts: { staticDir?: string } = {}): GameServer 
     socket.on('salon:sexe', (p, ack) => guard(ack, () => need().setSex(pid, p?.sex)));
     socket.on('salon:lancer', (_p, ack) => guard(ack, () => need().start(pid)));
     socket.on('salon:quitter', () => leaveCurrent(true));
+    socket.on('salon:retour', (_p, ack) => guard(ack, () => need().backToLobby(pid)));
     socket.on('jeu:pose', (p) => room?.pose(pid, p));
     socket.on('jeu:eliminer', (p, ack) => guard(ack, () => need().eliminate(pid, String(p?.target))));
     socket.on('jeu:tirer', (p, ack) => guard(ack, () => need().shoot(pid, String(p?.target))));

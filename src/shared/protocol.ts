@@ -52,7 +52,8 @@ export interface GameView {
   meeting: null | { by: string; reason: 'urgence' | 'corps'; body?: string; endsAt: number; voted: string[] };
   /** journal public (éliminations sans révéler le rôle, résultats des votes) */
   log: string[];
-  result: null | { winner: Winner; roles: Record<string, Role> };
+  /** fin : camp gagnant, raison lisible, rôles de tous, survivants */
+  result: null | { winner: Winner; roles: Record<string, Role>; reason: string; survivors: string[] };
   /** début de la partie et heure du serveur à l'envoi (ms) : cycle du jour identique pour tous */
   startedAt: number;
   serverNow: number;
@@ -81,6 +82,7 @@ export interface ClientToServer {
   'salon:sexe': (p: { sex: Sex }, ack: Ack) => void;
   'salon:lancer': (p: Record<string, never>, ack: Ack) => void;
   'salon:quitter': () => void;
+  'salon:retour': (p: Record<string, never>, ack: Ack) => void;
   'jeu:pose': (p: PlayerPose) => void;
   'jeu:eliminer': (p: { target: string }, ack: Ack) => void;
   'jeu:tirer': (p: { target: string }, ack: Ack) => void;

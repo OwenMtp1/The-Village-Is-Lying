@@ -169,6 +169,14 @@ class Net {
   vote(target: string | null) {
     return this.call('jeu:voter', { target });
   }
+  /** Fin de partie lue : la salle repasse au salon (état de la partie effacé pour tous). */
+  backToLobby() {
+    return this.call('salon:retour', {});
+  }
+  /** Heure du serveur (ms) : délais et comptes à rebours identiques pour tous les joueurs. */
+  serverNow() {
+    return Date.now() + this.clockOffset;
+  }
   nameOf(id: string) {
     return this.lobby?.players.find((p) => p.id === id)?.name ?? '?';
   }
