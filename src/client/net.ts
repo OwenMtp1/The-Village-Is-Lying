@@ -19,6 +19,8 @@ class Net {
   game: GameView | null = null;
   secret: PrivateInfo | null = null;
   poses: Record<string, PlayerPose> = {};
+  /** écart entre l'horloge du serveur et celle du navigateur (ms) */
+  clockOffset = 0;
   posesAt = 0;
   me = '';
   connected = false;
@@ -46,6 +48,7 @@ class Net {
     });
     this.socket.on('jeu:etat', (v) => {
       this.game = v;
+      if (v.serverNow) this.clockOffset = v.serverNow - Date.now();
       this.emit();
     });
     this.socket.on('jeu:secret', (v) => {

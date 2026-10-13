@@ -11,6 +11,8 @@ import { loadCharacter } from './characters/assets';
 import { GameUi } from './client/ui';
 import { OnlineGame } from './client/online';
 import { JUMP, MOVE } from './characters/config';
+import { Flashlights } from './characters/flashlight';
+import { dayState } from './shared/rules';
 import { net } from './client/net';
 
 const app = document.getElementById('app')!;
@@ -28,7 +30,8 @@ const village = await buildVillage((f, text) => {
 bar.style.width = '100%';
 const input = new Input(app);
 const view = new VillageView(app, village, input);
-const game = new Game(village, view.scene, view.camera, input);
+const torches = new Flashlights(view.scene);
+const game = new Game(village, view.scene, view.camera, input, torches);
 
 // ── interface d'inspection ──
 const ui = document.createElement('div');
@@ -104,7 +107,7 @@ hud.innerHTML = `<div class="who"><img alt=""><div><div class="who-name"></div><
   <div class="game-buttons"><button class="to-menu">Menu</button><button class="to-inspect">Inspecter la map</button></div>`;
 document.body.appendChild(hud);
 
-const online = new OnlineGame(village, view.scene, view.camera, input);
+const online = new OnlineGame(village, view.scene, view.camera, input, torches);
 let onlineKey = '';
 
 function enterSolo() {
@@ -155,6 +158,25 @@ const gameUi = new GameUi({
   inspect: () => enterInspection(),
 });
 const onlineUpdate = (dt: number) => online.update(dt);
+
+// ── cycle du jour (partie en cours) et inventaire : la lampe de poche ──
+const isOnline = () => view.driver?.update === onlineUpdate;
+const elapsed = () => (isOnline() ? online.elapsed : game.elapsed);
+view.daylightSource = () => (view.driver ? dayState(elapsed()).light : 0);
+const inv = document.createElement('div');
+inv.className = 'inventory';
+inv.innerHTML = `<div class="clock"></div><button type="button" class="slot" title="Allumer ou éteindre (L)"><span class="slot-key">L</span><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 9h9l3-3h4v12h-4l-3-3H3z" fill="currentColor"/><path d="M20 8l3-2M20 12h3M20 16l3 2" stroke="currentColor" stroke-width="1.5" fill="none"/></svg><span class="slot-name">Lampe de poche</span><span class="slot-state"></span></button>`;
+document.body.appendChild(inv);
+inv.querySelector('.slot')!.addEventListener('click', () => (isOnline() ? online.toggleTorch() : game.toggleTorch()));
+const fmt = (s: number) => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, '0')}`;
+setInterval(() => {
+  if (!view.driver) return;
+  const on = isOnline() ? online.torch : game.torch;
+  inv.classList.toggle('on', on);
+  inv.querySelector('.slot-state')!.textContent = on ? 'allumée' : 'éteinte';
+  const d = dayState(elapsed());
+  inv.querySelector('.clock')!.textContent = d.day ? `Jour · la nuit tombe dans ${fmt(d.remaining)}` : `Nuit · le jour se lève dans ${fmt(d.remaining)}`;
+}, 250);
 gameUi.attach(online);
 // compte à rebours des votes, actions possibles : rafraîchis quatre fois par seconde
 setInterval(() => net.game && gameUi.render(), 250);
@@ -184,6 +206,7 @@ app.addEventListener('click', () => {
   gameUi,
   /** réglages (contrôles automatiques : essais de vitesses) */
   config: { MOVE, JUMP },
+  torches,
   enterGame: enterSolo,
   enterInspection,
   /** contrôle : charge les 40 personnages et renvoie les anomalies de squelette ou d'animation */

@@ -1,0 +1,15 @@
+# Déploiement sur Render (https://render.com) : un service web Node qui sert les pages ET le serveur de jeu
+# (Socket.IO). New → Blueprint → choisir ce dépôt : Render lit ce fichier.
+services:
+  - type: web
+    name: the-village-is-lying
+    runtime: node
+    plan: free
+    # branche à déployer (à adapter : main une fois la branche fusionnée)
+    branch: claude/admiring-maxwell-7hmx5a
+    buildCommand: npm ci --include=dev && npm run build
+    startCommand: npm start
+    healthCheckPath: /
+    envVars:
+      - key: NODE_VERSION
+        value: "22"

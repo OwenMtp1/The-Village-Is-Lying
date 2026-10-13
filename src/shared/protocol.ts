@@ -36,6 +36,9 @@ export interface PlayerPose {
   grounded: boolean;
   vy: number;
   dir: 1 | -1;
+  /** lampe de poche allumée, et tangage du regard (direction du faisceau) */
+  torch: boolean;
+  pitch: number;
 }
 
 /** État public de la partie (aucun rôle avant la fin). */
@@ -50,6 +53,9 @@ export interface GameView {
   /** journal public (éliminations sans révéler le rôle, résultats des votes) */
   log: string[];
   result: null | { winner: Winner; roles: Record<string, Role> };
+  /** début de la partie et heure du serveur à l'envoi (ms) : cycle du jour identique pour tous */
+  startedAt: number;
+  serverNow: number;
 }
 
 /** Secret d'un joueur (envoyé à lui seul). */

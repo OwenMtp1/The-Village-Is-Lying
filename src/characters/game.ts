@@ -15,6 +15,26 @@ import type { MoveInput } from './controller';
 import type { Sex } from './catalog';
 import type { Input } from '../input';
 import type { Village } from '../village/village';
+import { dayState } from '../shared/rules';
+import { lookDir, type Flashlights } from './flashlight';
+
+/**
+ * Oriente la lampe du joueur vers ce qu'il regarde : en troisième personne, le faisceau part de la main et vise
+ * le point regardé par la caméra (à 15 m) ; en vue subjective, il part juste sous les yeux.
+ */
+export function aimTorch(torches: Flashlights, ch: Character, cam: PlayerCamera, on: boolean) {
+  const dir = lookDir(cam.yaw, cam.pitch);
+  if (!on) {
+    torches.setLocal(false, dir, dir);
+    return;
+  }
+  const c = cam.camera.position;
+  let from: THREE.Vector3;
+  if (cam.mode === 'subjective') from = c.clone().add(new THREE.Vector3(-Math.cos(cam.yaw) * 0.12, -0.18, Math.sin(cam.yaw) * 0.12));
+  else from = ch.animator.handPosition().addScaledVector(dir, 0.15);
+  const target = c.clone().addScaledVector(dir, 25);
+  torches.setLocal(true, from, target.sub(from).normalize());
+}
 
 interface Npc {
   ch: Character;
@@ -70,14 +90,30 @@ export class Game {
   info: GameInfo | null = null;
   /** commandes du joueur gelées (menus ouverts) */
   frozen = false;
+  /** lampe de poche du joueur allumée */
+  torch = false;
+  /** début de la partie (horloge du navigateur, s) : cycle du jour */
+  private startedAt = 0;
 
   constructor(
     readonly village: Village,
     readonly scene: THREE.Scene,
     camera: THREE.PerspectiveCamera,
     readonly input: Input,
+    readonly torches: Flashlights,
   ) {
     this.cam = new PlayerCamera(camera);
+  }
+
+  /** Secondes écoulées depuis le début de la partie (cycle du jour et de la nuit). */
+  get elapsed() {
+    return this.player ? performance.now() / 1000 - this.startedAt : 0;
+  }
+
+  toggleTorch() {
+    if (!this.player) return;
+    this.torch = !this.torch;
+    this.player.animator.setTorch(this.torch);
   }
 
   /** Démarre une partie avec le sexe choisi par le joueur. Les personnages précédents sont retirés. */
@@ -104,6 +140,8 @@ export class Game {
       this.scene.add(ch.root);
       this.npcs.push({ ch, path, i: 1, wait: rnd() * 2, run: false });
     });
+    this.startedAt = performance.now() / 1000;
+    this.torch = false;
     const v = this.player.animator.base.variant;
     this.info = { seed, player: { id: 'joueur', variant: v.id, firstName: v.firstName }, appearances };
     this.input.flush();
@@ -119,6 +157,7 @@ export class Game {
     for (const id of this.loaded) void releaseCharacter(id);
     this.loaded.clear();
     this.info = null;
+    this.torches.off();
   }
 
   /** Une image de jeu : commandes, déplacements, animations, caméra. */
@@ -131,8 +170,18 @@ export class Game {
     if (!this.frozen && inp.consume('KeyV')) this.cam.toggle(p);
     const cmd = readMove(inp, this.cam, this.frozen);
     p.update(dt, cmd, this.cam.mode === 'subjective' ? this.cam.yaw : null);
+    if (!this.frozen && inp.consume('KeyL')) this.toggleTorch();
     for (const n of this.npcs) this.updateNpc(n, dt);
     this.cam.update(dt, p, this.village.collision);
+    aimTorch(this.torches, p, this.cam, this.torch);
+    // les villageois sortent leur lampe quand il fait sombre
+    const dark = dayState(this.elapsed).light < 0.5;
+    const beams: { from: THREE.Vector3; dir: THREE.Vector3 }[] = [];
+    for (const n of this.npcs) {
+      n.ch.animator.setTorch(dark);
+      if (dark) beams.push({ from: n.ch.animator.handPosition(), dir: lookDir(n.ch.yaw, -0.18) });
+    }
+    this.torches.setRemotes(beams, p.root.position);
   }
 
   private updateNpc(n: Npc, dt: number) {

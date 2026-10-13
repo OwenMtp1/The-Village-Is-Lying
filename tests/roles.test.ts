@@ -94,7 +94,7 @@ function setup(comp: Composition, n = totalOf(comp)) {
 /** Tout le monde marche jusqu'au même endroit (3 s : vitesse plausible, portées respectées). */
 function gather(room: Room, ids: string[], clock?: { advance(s: number): void }) {
   clock?.advance(3);
-  for (const id of ids) room.pose(id, { x: 0, y: 0, z: 0, yaw: 0, speed: 0, grounded: true, vy: 0, dir: 1 });
+  for (const id of ids) room.pose(id, { x: 0, y: 0, z: 0, yaw: 0, speed: 0, grounded: true, vy: 0, dir: 1, torch: false, pitch: 0 });
 }
 
 test('salon : places = somme des rôles, salon complet, lancement seulement au complet', () => {
@@ -169,10 +169,10 @@ test('tueurs : délais individuels, pas de double élimination, pas entre tueurs
   assert.ok(!room.isAlive(victims[0]) && !room.isAlive(victims[1]));
   assert.equal(out.secrets.get(killers[0])!.killReadyAt > clock.now(), true);
   // portée
-  room.pose(victims[2], { x: 0, y: 0, z: 0.3, yaw: 0, speed: 0, grounded: true, vy: 0, dir: 1 });
+  room.pose(victims[2], { x: 0, y: 0, z: 0.3, yaw: 0, speed: 0, grounded: true, vy: 0, dir: 1, torch: false, pitch: 0 });
   clock.advance(RULES.killCooldown + 1);
-  room.pose(killers[0], { x: 3, y: 0, z: 0, yaw: 0, speed: 0, grounded: true, vy: 0, dir: 1 });
-  room.pose(victims[3], { x: 8, y: 0, z: 0, yaw: 0, speed: 0, grounded: true, vy: 0, dir: 1 });
+  room.pose(killers[0], { x: 3, y: 0, z: 0, yaw: 0, speed: 0, grounded: true, vy: 0, dir: 1, torch: false, pitch: 0 });
+  room.pose(victims[3], { x: 8, y: 0, z: 0, yaw: 0, speed: 0, grounded: true, vy: 0, dir: 1, torch: false, pitch: 0 });
   assert.throws(() => room.eliminate(killers[0], victims[3]), /Trop loin/);
 });
 
@@ -260,9 +260,9 @@ test('vote clos à l’échéance même si quelqu’un ne vote pas ; positions i
   clock.advance(RULES.meetingSeconds + 1);
   room.tick();
   assert.equal(room.gameView().phase, 'jeu');
-  room.pose(ids[2], { x: 0, y: 0, z: 0, yaw: 0, speed: 0, grounded: true, vy: 0, dir: 1 });
+  room.pose(ids[2], { x: 0, y: 0, z: 0, yaw: 0, speed: 0, grounded: true, vy: 0, dir: 1, torch: false, pitch: 0 });
   clock.advance(0.1);
-  room.pose(ids[2], { x: 50, y: 0, z: 0, yaw: 0, speed: 0, grounded: true, vy: 0, dir: 1 });
+  room.pose(ids[2], { x: 50, y: 0, z: 0, yaw: 0, speed: 0, grounded: true, vy: 0, dir: 1, torch: false, pitch: 0 });
   assert.equal(room.posesView()[ids[2]].x, 0, 'téléportation refusée');
 });
 
@@ -276,4 +276,33 @@ test('reconnexion pendant la partie avec le jeton : même joueur, même secret',
   const back = room.join('peu importe', 'M', token);
   assert.equal(back.id, ids[2]);
   assert.equal(out.secrets.get(ids[2])!.role, role);
+});
+
+test('cycle : 5 min de nuit, 5 min de jour, transitions progressives, sans fin de partie', async () => {
+  const { DAY_CYCLE, dayState } = await import('../src/shared/rules');
+  assert.equal(DAY_CYCLE.nightSeconds, 300);
+  assert.equal(DAY_CYCLE.daySeconds, 300);
+  assert.deepEqual([dayState(0).day, dayState(0).light], [false, 0]);
+  assert.equal(dayState(150).light, 0);
+  assert.ok(dayState(290).light > 0 && dayState(290).light < 1, 'aube progressive');
+  assert.deepEqual([dayState(300).day, dayState(300).light], [true, 1]);
+  assert.equal(dayState(450).light, 1);
+  assert.ok(dayState(590).light < 1 && dayState(590).light > 0, 'crépuscule progressif');
+  assert.deepEqual([dayState(600).day, dayState(600).light, dayState(600).index], [false, 0, 1]);
+  assert.equal(dayState(4 * 3600 + 450).day, true, 'le cycle continue tant que la partie dure');
+  for (let t = 0; t < 1200; t += 0.5) assert.ok(Math.abs(dayState(t + 0.5).light - dayState(t).light) < 0.05, `pas de saut de lumière à ${t} s`);
+});
+
+test('lampe : état et direction du faisceau transmis aux autres joueurs ; la partie ne s’arrête que sur une victoire', () => {
+  const { room, ids, clock } = setup(C(1, 1, 1, 3));
+  room.start(ids[0]);
+  clock.advance(1);
+  room.pose(ids[1], { x: -2, y: 0, z: 3, yaw: 1, speed: 0, grounded: true, vy: 0, dir: 1, torch: true, pitch: -0.3 });
+  assert.equal(room.posesView()[ids[1]].torch, true);
+  assert.equal(room.posesView()[ids[1]].pitch, -0.3);
+  assert.ok(room.gameView().startedAt > 0 && room.gameView().serverNow >= room.gameView().startedAt);
+  clock.advance(3 * 3600);
+  room.tick();
+  assert.equal(room.gameView().phase, 'jeu', 'trois heures plus tard, toujours en jeu');
+  assert.equal(room.gameView().result, null);
 });

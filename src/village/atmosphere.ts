@@ -12,6 +12,8 @@ import type { WorldLight } from './buildings';
 import { PACKED, asset } from '../characters/catalog';
 
 export const MOON_DIR = new THREE.Vector3(-0.42, 0.55, -0.72).normalize();
+/** soleil de l'après-midi, haut à l'ouest-sud-ouest */
+export const SUN_DIR = new THREE.Vector3(-0.55, 0.78, 0.3).normalize();
 export const FOG_COLOR = '#0c1322';
 
 export function buildSky(radius = 650): THREE.Group {
@@ -33,14 +35,16 @@ export function buildSky(radius = 650): THREE.Group {
         mid: { value: new THREE.Color('#0b1428') },
         horizon: { value: new THREE.Color('#1c2944') },
         moonDir: { value: MOON_DIR },
+        sunDir: { value: SUN_DIR },
+        day: { value: 0 },
         time: { value: 0 },
       },
       vertexShader: /* glsl */ `
         varying vec3 vDir;
         void main() { vDir = normalize(position); gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }`,
       fragmentShader: /* glsl */ `
-        uniform vec3 top, mid, horizon, moonDir;
-        uniform float time;
+        uniform vec3 top, mid, horizon, moonDir, sunDir;
+        uniform float time, day;
         varying vec3 vDir;
         float h(vec2 p) { return fract(sin(dot(p, vec2(12.9898, 78.233))) * 43758.5453); }
         float n(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3. - 2. * f);
@@ -54,18 +58,23 @@ export function buildSky(radius = 650): THREE.Group {
           float clouds = smoothstep(0.5, 0.82, cl) * smoothstep(0.03, 0.3, y);
           float md = max(dot(vDir, moonDir), 0.0);
           vec3 cloudCol = mix(vec3(0.03, 0.04, 0.07), vec3(0.3, 0.34, 0.45), pow(md, 5.0));
-          c = mix(c, cloudCol, clouds * 0.8);
+          cloudCol = mix(cloudCol, vec3(0.86, 0.88, 0.9), day);
+          c = mix(c, cloudCol, clouds * mix(0.8, 0.65, day));
           // halo et disque de la lune
-          c += vec3(0.35, 0.42, 0.6) * pow(md, 60.0) * 0.8 * (1.0 - clouds * 0.5);
-          c += vec3(0.1, 0.12, 0.18) * pow(md, 8.0) * 0.5;
+          float night = 1.0 - day;
+          c += vec3(0.35, 0.42, 0.6) * pow(md, 60.0) * 0.8 * (1.0 - clouds * 0.5) * night;
+          c += vec3(0.1, 0.12, 0.18) * pow(md, 8.0) * 0.5 * night;
+          // soleil et son halo
+          float sd = max(dot(vDir, sunDir), 0.0);
+          c += vec3(1.0, 0.92, 0.75) * (smoothstep(0.9994, 0.9997, sd) * 3.0 + pow(sd, 12.0) * 0.35) * day * (1.0 - clouds * 0.6);
           float disc = smoothstep(0.99955, 0.9997, md);
           float crater = n(vDir.xy * 900.0) * 0.25;
-          c = mix(c, vec3(0.92, 0.93, 0.86) - crater, disc * (1.0 - clouds * 0.75));
+          c = mix(c, vec3(0.92, 0.93, 0.86) - crater, disc * (1.0 - clouds * 0.75) * night);
           // étoiles
           vec2 sp = vDir.xz / (vDir.y + 0.05) * 110.0;
           float st = step(0.9965, h(floor(sp))) * smoothstep(0.12, 0.5, y) * (1.0 - clouds);
           st *= 0.6 + 0.4 * sin(time * 2.0 + h(floor(sp) + 3.1) * 30.0);
-          c += vec3(st) * 0.7;
+          c += vec3(st) * 0.7 * night;
           gl_FragColor = vec4(c, 1.0);
         }`,
     }),
@@ -91,6 +100,8 @@ export function buildSky(radius = 650): THREE.Group {
     geo.setAttribute('position', new THREE.Float32BufferAttribute(pts, 3));
     geo.setIndex(idx);
     const m = new THREE.Mesh(geo, new THREE.MeshBasicMaterial({ color: col, side: THREE.DoubleSide, fog: false }));
+    m.name = 'collines';
+    m.userData.night = col;
     m.renderOrder = -9;
     follow(m);
     g.add(m);
@@ -106,6 +117,9 @@ export interface Atmosphere {
   /** réaffecte les lumières dès la prochaine image (saut de caméra) */
   invalidate(): void;
   activeLights(): number;
+  /** 0 = pleine nuit, 1 = plein jour (aube et crépuscule entre les deux) */
+  setDaylight(d: number): void;
+  readonly daylight: number;
 }
 
 export function setupAtmosphere(renderer: THREE.WebGLRenderer, scene: THREE.Scene, anchors: WorldLight[], sky: THREE.Group, poolSize = 16): Atmosphere {
@@ -152,18 +166,65 @@ export function setupAtmosphere(renderer: THREE.WebGLRenderer, scene: THREE.Scen
   const tmp = new THREE.Vector3();
   const domeMat = (sky.getObjectByName('dome') as THREE.Mesh).material as THREE.ShaderMaterial;
 
+  // ── jour et nuit : toutes les grandeurs d'ambiance sont interpolées entre deux réglages ──
+  const C = (a: string) => new THREE.Color(a);
+  const NIGHT = { top: C('#03060f'), mid: C('#0b1428'), horizon: C('#1c2944'), fog: C(FOG_COLOR), moon: C('#a9bce8'), hemiSky: C('#5d6f9c'), hemiGround: C('#16130f') };
+  const DAY = { top: C('#2f63a8'), mid: C('#6f9bd0'), horizon: C('#c9d7e2'), fog: C('#aebdca'), moon: C('#fff1d8'), hemiSky: C('#c3d8ef'), hemiGround: C('#4c4636') };
+  const hills = sky.children.filter((o) => o.name === 'collines') as THREE.Mesh[];
+  const hillDay = [C('#3c4d48'), C('#4a5d52')];
+  let daylight = 0;
+  let lightScale = 1;
+  const glowing = new Map<THREE.MeshStandardMaterial, number>();
+  const glowMats = () => {
+    // matériaux lumineux (fenêtres éclairées, verres de lanterne) : moins visibles en plein jour
+    if (glowing.size) return;
+    scene.traverse((o) => {
+      const m = (o as THREE.Mesh).material as THREE.MeshStandardMaterial | undefined;
+      if (m && m.emissiveIntensity > 0 && m.emissive && (m.name === 'litWindow' || m.emissive.getHex() === 0xffc874)) glowing.set(m, m.emissiveIntensity);
+    });
+  };
+  const setDaylight = (d: number) => {
+    d = THREE.MathUtils.clamp(d, 0, 1);
+    if (Math.abs(d - daylight) < 1e-4 && glowing.size) return;
+    daylight = d;
+    const u = domeMat.uniforms;
+    (u.top.value as THREE.Color).copy(NIGHT.top).lerp(DAY.top, d);
+    (u.mid.value as THREE.Color).copy(NIGHT.mid).lerp(DAY.mid, d);
+    (u.horizon.value as THREE.Color).copy(NIGHT.horizon).lerp(DAY.horizon, d);
+    u.day.value = d;
+    hills.forEach((h, i) => (h.material as THREE.MeshBasicMaterial).color.copy(C(h.userData.night)).lerp(hillDay[i] ?? hillDay[0], d));
+    const fog = scene.fog as THREE.FogExp2;
+    fog.color.copy(NIGHT.fog).lerp(DAY.fog, d);
+    (scene.background as THREE.Color).copy(fog.color);
+    moon.color.copy(NIGHT.moon).lerp(DAY.moon, d);
+    moon.intensity = THREE.MathUtils.lerp(1.35, 3.4, d);
+    hemi.color.copy(NIGHT.hemiSky).lerp(DAY.hemiSky, d);
+    hemi.groundColor.copy(NIGHT.hemiGround).lerp(DAY.hemiGround, d);
+    hemi.intensity = THREE.MathUtils.lerp(0.65, 1.5, d);
+    scene.environmentIntensity = THREE.MathUtils.lerp(0.22, 0.75, d);
+    lightScale = 1 - 0.85 * d;
+    glowMats();
+    for (const [m, base] of glowing) m.emissiveIntensity = base * (1 - 0.75 * d);
+  };
+  const lightDir = new THREE.Vector3();
+
   return {
+    get daylight() {
+      return daylight;
+    },
+    setDaylight,
     moon,
     hemi,
     update(dt, camera, focus, inside) {
       t += dt;
       // brume au ras du sol : plus dense dans les rues, plus légère vue de haut (le village reste lisible)
-      (scene.fog as THREE.FogExp2).density = THREE.MathUtils.lerp(0.0115, 0.0026, THREE.MathUtils.smoothstep(camera.position.y, 12, 90));
+      (scene.fog as THREE.FogExp2).density = THREE.MathUtils.lerp(0.0115, 0.0026, THREE.MathUtils.smoothstep(camera.position.y, 12, 90)) * (1 - 0.55 * daylight);
       domeMat.uniforms.time.value = t;
       // la carte d'ombre de la lune suit la zone regardée (alignée sur les texels pour éviter le scintillement)
       const snap = (v: number) => Math.round(v / 0.5) * 0.5;
       moon.target.position.set(snap(focus.x), snap(focus.y), snap(focus.z));
-      moon.position.copy(moon.target.position).addScaledVector(MOON_DIR, 160);
+      lightDir.copy(MOON_DIR).lerp(SUN_DIR, daylight).normalize();
+      moon.position.copy(moon.target.position).addScaledVector(lightDir, 160);
       reassign -= dt;
       if (reassign <= 0) {
         reassign = 0.2;
@@ -197,7 +258,7 @@ export function setupAtmosphere(renderer: THREE.WebGLRenderer, scene: THREE.Scen
         // fondu en bordure du groupe : pas d'apparition brutale quand une lumière entre ou sort
         const d = tmp.set(a.x, a.y, a.z).distanceTo(camera.position);
         const fade = 1 - THREE.MathUtils.smoothstep(d, 55, 80);
-        pool[i].intensity = a.intensity * f * fade;
+        pool[i].intensity = a.intensity * f * fade * (a.indoor ? 1 : lightScale);
       }
     },
     setShadowQuality(level) {

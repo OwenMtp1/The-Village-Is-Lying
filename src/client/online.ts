@@ -8,7 +8,8 @@ import { loadCharacter } from '../characters/assets';
 import { CharacterAnimator } from '../characters/animator';
 import { PlayerCamera } from '../characters/camera';
 import { Character } from '../characters/character';
-import { readMove } from '../characters/game';
+import { aimTorch, readMove } from '../characters/game';
+import { lookDir, type Flashlights } from '../characters/flashlight';
 import { RULES } from '../shared/rules';
 import type { PlayerPose } from '../shared/protocol';
 import type { Input } from '../input';
@@ -47,8 +48,24 @@ export class OnlineGame {
     readonly scene: THREE.Scene,
     camera: THREE.PerspectiveCamera,
     readonly input: Input,
+    readonly torches: Flashlights,
   ) {
     this.cam = new PlayerCamera(camera);
+  }
+
+  /** lampe de poche du joueur allumée */
+  torch = false;
+
+  toggleTorch() {
+    if (!this.player || !this.alive) return;
+    this.torch = !this.torch;
+    this.player.animator.setTorch(this.torch);
+  }
+
+  /** Secondes écoulées depuis le début de la partie, selon l'horloge du serveur. */
+  get elapsed() {
+    const g = net.game;
+    return g && g.startedAt ? (Date.now() + net.clockOffset - g.startedAt) / 1000 : 0;
   }
 
   /** Crée les personnages de la partie (une fois les apparences connues). */
@@ -89,6 +106,8 @@ export class OnlineGame {
     for (const b of this.bodies.values()) b.dispose();
     this.bodies.clear();
     this.prompts = [];
+    this.torch = false;
+    this.torches.off();
   }
 
   private get alive() {
@@ -111,11 +130,23 @@ export class OnlineGame {
     this.sendAcc += dt;
     if (this.alive && playing && this.sendAcc > 1 / 15) {
       this.sendAcc = 0;
-      net.sendPose({ x: c.x, y: c.y, z: c.z, yaw: p.yaw, speed: Math.hypot(c.realVx, c.realVz), grounded: c.grounded, vy: c.vy, dir: 1 });
+      net.sendPose({ x: c.x, y: c.y, z: c.z, yaw: p.yaw, speed: Math.hypot(c.realVx, c.realVz), grounded: c.grounded, vy: c.vy, dir: 1, torch: this.torch, pitch: this.cam.pitch });
     }
     this.updateRemotes(dt);
     this.updateBodies();
+    if (!frozen && this.input.consume('KeyL')) this.toggleTorch();
+    if (!this.alive && this.torch) this.toggleTorch();
     this.cam.update(dt, p, this.village.collision);
+    aimTorch(this.torches, p, this.cam, this.torch && this.alive);
+    // faisceaux des autres joueurs (lampe allumée, orientée selon leur regard)
+    const beams: { from: THREE.Vector3; dir: THREE.Vector3 }[] = [];
+    for (const [id, r] of this.remotes) {
+      const t = r.target;
+      const on = !!t?.torch && !!net.game?.alive[id];
+      r.anim.setTorch(on);
+      if (on) beams.push({ from: r.anim.handPosition(), dir: lookDir(t!.yaw, t!.pitch) });
+    }
+    this.torches.setRemotes(beams, p.root.position);
     if (!this.alive) p.root.visible = false;
     this.updatePrompts();
     for (const pr of this.prompts)

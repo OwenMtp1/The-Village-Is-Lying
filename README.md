@@ -53,6 +53,21 @@ Victoire recalculée après chaque mort, sur les vivants : les innocents gagnent
 Réglages : `src/shared/rules.ts`. Le serveur (`src/server/`) revérifie chaque action (rôle, portée, délais,
 munitions, vivants, phase) et ignore les positions impossibles.
 
+## Jour, nuit et lampe de poche
+
+- La partie commence à la tombée de la nuit : **5 minutes de nuit, puis 5 minutes de jour**, en boucle, avec une aube
+  et un crépuscule progressifs, jusqu'à la victoire d'un camp (aucune limite de durée). En ligne, le serveur donne
+  l'heure de départ : tous les joueurs voient le même moment de la journée. L'heure restante s'affiche en haut à droite.
+- Chaque joueur a une **lampe de poche** dans son inventaire (emplacement en haut à droite, touche `L`) : un
+  faisceau puissant qui suit le regard, avec ombres ; les lampes allumées des autres joueurs sont visibles.
+  Réglages : `src/characters/flashlight.ts` et `DAY_CYCLE` dans `src/shared/rules.ts`.
+
+## Mettre en ligne (Render)
+
+Le dépôt contient `render.yaml` : sur https://render.com, **New → Blueprint**, choisir ce dépôt, valider.
+Render installe, compile (`npm run build`) et lance `npm start` ; le jeu est servi à l'adresse du service
+(`https://<nom>.onrender.com`), pages et serveur de parties ensemble.
+
 ## Personnages
 
 Base **Microsoft Rocketbox** (MIT) : 40 personnages distincts (20 femmes, 20 hommes), même squelette Biped,

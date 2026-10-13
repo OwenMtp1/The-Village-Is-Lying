@@ -17,6 +17,7 @@ import { clone as cloneSkinned } from 'three/examples/jsm/utils/SkeletonUtils.js
 import { ANIM, JUMP } from './config';
 import { LOCOMOTION, type CharacterBase } from './assets';
 import { applyPose, bipedRig, type Pose, type Rig } from './pose';
+import { torchModel } from './flashlight';
 
 export interface AnimInput {
   /** vitesse horizontale réelle (m/s) */
@@ -59,6 +60,9 @@ export class CharacterAnimator {
   private lean = 0;
   private headMeshes: THREE.Object3D[] = [];
   private blob: THREE.Mesh;
+  /** lampe de poche tenue dans la main droite (visible quand elle est allumée) */
+  private torch: THREE.Group = torchModel();
+  private hand: THREE.Object3D | null = null;
 
   constructor(readonly base: CharacterBase) {
     this.model = cloneSkinned(base.scene) as THREE.Group;
@@ -82,6 +86,15 @@ export class CharacterAnimator {
     });
     this.head = head;
     this.rig = bipedRig(this.model);
+    this.model.traverse((o) => {
+      if (o.name === 'R_Hand') this.hand = o;
+    });
+    if (this.hand) {
+      // la lampe suit la main ; l'échelle du modèle est compensée pour garder sa vraie taille
+      this.torch.scale.setScalar(1 / this.scale);
+      this.torch.position.set(0.09 / this.scale, 0.01 / this.scale, 0.03 / this.scale);
+      this.hand.add(this.torch);
+    }
 
     this.mixer = new THREE.AnimationMixer(this.model);
     const action = (name: string) => {
@@ -119,6 +132,17 @@ export class CharacterAnimator {
   onLand(impact: number) {
     this.landAmount = THREE.MathUtils.clamp(impact / 9, 0.25, 0.85);
     this.land = 1;
+  }
+
+  /** Affiche la lampe dans la main (allumée) ou la range (éteinte). */
+  setTorch(on: boolean) {
+    this.torch.visible = on;
+  }
+
+  /** Position (monde) de la main droite : départ du faisceau de la lampe. */
+  handPosition(out = new THREE.Vector3()) {
+    this.root.updateMatrixWorld(true);
+    return (this.hand ?? this.head).getWorldPosition(out);
   }
 
   /** Vue subjective : tête, cheveux et lunettes masqués (le corps et ses animations restent). */
@@ -191,6 +215,11 @@ export class CharacterAnimator {
 
     // ── couches procédurales : pose aérienne, inclinaison dans les virages ──
     const pose: Pose = {};
+    // lampe allumée : avant-bras droit levé, la lampe pointée devant soi
+    if (this.torch.visible && this.air < 0.5) {
+      pose.RightArm = { bend: -0.55 };
+      pose.RightForeArm = { bend: -0.75 };
+    }
     if (this.air > 0.01) {
       const v0 = Math.sqrt(2 * JUMP.gravity * JUMP.height);
       const rise = THREE.MathUtils.clamp(s.vy / v0, -1, 1); // 1 = décollage, -1 = chute

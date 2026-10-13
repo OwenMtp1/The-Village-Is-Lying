@@ -529,7 +529,9 @@ export const VM = {
   litWindow: () =>
     cached('litWindow', () => {
       const t = litWindow().map;
-      return new THREE.MeshStandardMaterial({ map: t, emissive: '#ffffff', emissiveMap: t, emissiveIntensity: 1.6, roughness: 0.3, side: THREE.FrontSide });
+      const m = new THREE.MeshStandardMaterial({ map: t, emissive: '#ffffff', emissiveMap: t, emissiveIntensity: 1.6, roughness: 0.3, side: THREE.FrontSide });
+      m.name = 'litWindow';
+      return m;
     }),
   darkWindow: () => cached('darkWindow', () => new THREE.MeshStandardMaterial({ map: darkWindow().map, roughness: 0.08, metalness: 0.5, envMapIntensity: 1.5 })),
   /** couleur unie (tissus, cire, céramique…) */

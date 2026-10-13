@@ -63,6 +63,7 @@ export class Room {
   private log: string[] = [];
   private result: GameView['result'] = null;
   private gamePhase: GameView['phase'] = 'jeu';
+  private startedAt = 0;
 
   constructor(
     readonly code: string,
@@ -189,7 +190,7 @@ export class Room {
       const a = (i / ids.length) * Math.PI * 2;
       const x = -2 + Math.cos(a) * SPAWN_RADIUS;
       const z = 0.5 + Math.sin(a) * SPAWN_RADIUS;
-      this.poses.set(pid, { x, y: 0, z, yaw: Math.atan2(-2 - x, 0.5 - z), speed: 0, grounded: true, vy: 0, dir: 1, t: t });
+      this.poses.set(pid, { x, y: 0, z, yaw: Math.atan2(-2 - x, 0.5 - z), speed: 0, grounded: true, vy: 0, dir: 1, torch: false, pitch: 0, t: t });
     });
     this.bodies = [];
     this.meeting = null;
@@ -197,6 +198,7 @@ export class Room {
     this.result = null;
     this.gamePhase = 'jeu';
     this.phase = 'partie';
+    this.startedAt = t;
     this.publish();
     for (const pid of ids) this.sendSecret(pid);
     this.out.event('La nuit tombe sur le village. Les rôles ont été distribués.', 'info');
@@ -234,19 +236,19 @@ export class Room {
   /** Position envoyée par un joueur vivant ; un déplacement impossible (téléportation) est ignoré. */
   pose(id: string, p: PlayerPose) {
     if (this.phase !== 'partie' || !this.alive.get(id) || this.gamePhase !== 'jeu') return;
-    if (![p.x, p.y, p.z, p.yaw, p.speed, p.vy].every(Number.isFinite)) return;
+    if (![p.x, p.y, p.z, p.yaw, p.speed, p.vy, p.pitch ?? 0].every(Number.isFinite)) return;
     const prev = this.poses.get(id);
     const t = this.now();
     if (prev) {
       const dt = Math.max(0.05, (t - prev.t) / 1000);
       if (Math.hypot(p.x - prev.x, p.z - prev.z) / dt > RULES.maxSpeed && prev.t > 0) return;
     }
-    this.poses.set(id, { x: p.x, y: p.y, z: p.z, yaw: p.yaw, speed: Math.min(p.speed, 6), grounded: !!p.grounded, vy: p.vy, dir: p.dir === -1 ? -1 : 1, t });
+    this.poses.set(id, { x: p.x, y: p.y, z: p.z, yaw: p.yaw, speed: Math.min(p.speed, 6), grounded: !!p.grounded, vy: p.vy, dir: p.dir === -1 ? -1 : 1, torch: p.torch === true, pitch: Math.max(-1.5, Math.min(1.5, p.pitch ?? 0)), t });
   }
 
   posesView(): Record<string, PlayerPose> {
     const out: Record<string, PlayerPose> = {};
-    for (const [id, p] of this.poses) if (this.alive.get(id)) out[id] = { x: p.x, y: p.y, z: p.z, yaw: p.yaw, speed: p.speed, grounded: p.grounded, vy: p.vy, dir: p.dir };
+    for (const [id, p] of this.poses) if (this.alive.get(id)) out[id] = { x: p.x, y: p.y, z: p.z, yaw: p.yaw, speed: p.speed, grounded: p.grounded, vy: p.vy, dir: p.dir, torch: p.torch, pitch: p.pitch };
     return out;
   }
 
@@ -426,6 +428,8 @@ export class Room {
       meeting: this.meeting ? { by: this.meeting.by, reason: this.meeting.reason, body: this.meeting.body, endsAt: this.meeting.endsAt, voted: [...this.meeting.voted] } : null,
       log: this.log.slice(-12),
       result: this.result,
+      startedAt: this.startedAt,
+      serverNow: this.now(),
     };
   }
 

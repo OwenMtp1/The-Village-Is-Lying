@@ -76,6 +76,8 @@ export class VillageView {
   private clock = new THREE.Clock();
   /** pilote de la caméra en mode jeu (personnage) ; null = inspection */
   driver: { update(dt: number): void } | null = null;
+  /** lumière du jour (0 nuit, 1 jour) fournie par la partie en cours ; nuit en inspection */
+  daylightSource: (() => number) | null = null;
   private yaw = 0;
   private pitch = 0;
   private flySpeed = 6;
@@ -324,6 +326,9 @@ export class VillageView {
       this.atmo.invalidate();
     }
 
+    const daylight = this.daylightSource?.() ?? 0;
+    this.atmo.setDaylight(daylight);
+    this.bloom.strength = THREE.MathUtils.lerp(0.55, 0.18, daylight);
     const focus = this.mode === 'orbite' ? this.orbit.target : cam.position.clone().add(cam.getWorldDirection(new THREE.Vector3()).multiplyScalar(25));
     this.atmo.update(dt, cam, focus, this.insideId);
 

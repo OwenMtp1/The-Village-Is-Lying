@@ -134,3 +134,15 @@ html, body { margin: 0; height: 100%; overflow: hidden; }
 .toast.bad { border-color: #e0675a; }
 @media (max-width: 640px) { .rolecard { right: 8px; left: 8px; max-width: none; } .prompts { bottom: 140px; } }
 .offline { color: #e0a85a; font-size: 13px; border: 1px solid rgba(224, 168, 90, 0.4); padding: 8px 10px; margin: 0 0 12px; }
+
+/* inventaire et heure de la journée */
+.inventory { display: none; position: fixed; z-index: 5; right: 16px; top: 52px; flex-direction: column; align-items: flex-end; gap: 6px; }
+.playing .inventory { display: flex; }
+.inventory .clock { font-size: 13px; color: var(--ink); text-shadow: 0 1px 4px #000; background: var(--panel); border: 1px solid var(--line); padding: 4px 10px; font-variant-numeric: tabular-nums; }
+.inventory .slot { display: grid; grid-template-columns: auto 22px auto; grid-template-rows: auto auto; column-gap: 8px; align-items: center; font: inherit; color: var(--muted); background: var(--panel); border: 1px solid var(--line); padding: 6px 10px; cursor: pointer; text-align: left; }
+.inventory .slot svg { grid-row: span 2; width: 22px; height: 22px; }
+.inventory .slot-key { grid-row: span 2; font: 11px ui-monospace, monospace; border: 1px solid var(--line); padding: 1px 5px; color: var(--ink); }
+.inventory .slot-name { font-size: 13px; color: var(--ink); }
+.inventory .slot-state { font-size: 11px; }
+.inventory.on .slot { border-color: var(--accent); color: var(--accent); }
+.inventory.on .slot-state { color: var(--accent); }

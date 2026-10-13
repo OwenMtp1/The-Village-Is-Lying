@@ -58,3 +58,33 @@ export function winnerOf(alive: Role[]): Winner | null {
   if (tueurs >= innocents) return 'tueurs';
   return null;
 }
+
+// ───────────────────────── cycle du jour et de la nuit ─────────────────────────
+
+/**
+ * La partie commence à la tombée de la nuit : 5 minutes de nuit, puis 5 minutes de jour, et ainsi de suite
+ * jusqu'à la victoire d'un camp (aucune limite de durée). L'aube et le crépuscule sont progressifs.
+ */
+export const DAY_CYCLE = { nightSeconds: 300, daySeconds: 300, twilightSeconds: 25 };
+
+const smooth = (t: number) => {
+  const x = Math.min(1, Math.max(0, t));
+  return x * x * (3 - 2 * x);
+};
+
+/** Où en est la journée, `elapsed` secondes après le début de la partie. */
+export function dayState(elapsed: number): { day: boolean; light: number; remaining: number; index: number } {
+  const { nightSeconds: N, daySeconds: D, twilightSeconds: T } = DAY_CYCLE;
+  const period = N + D;
+  const e = Math.max(0, elapsed);
+  const t = e % period;
+  const index = Math.floor(e / period);
+  if (t < N) {
+    // nuit ; l'aube commence pendant ses dernières secondes
+    const light = smooth((t - (N - T)) / T);
+    return { day: false, light, remaining: N - t, index };
+  }
+  // jour ; le crépuscule commence pendant ses dernières secondes
+  const light = 1 - smooth((t - N - (D - T)) / T);
+  return { day: true, light, remaining: period - t, index };
+}
