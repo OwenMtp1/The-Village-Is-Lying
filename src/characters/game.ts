@@ -31,6 +31,31 @@ const ROUTES: [number, number][][] = [
   [[-18, 3.5], [-34, 6.5], [-50, 5.5], [-34, 6.5]],
 ];
 
+/**
+ * Commandes de déplacement du joueur, relatives au regard : avant / arrière / côtés (ZQSD = WASD physiques,
+ * flèches), course (Maj), saut (Espace, front montant seulement). Partagé par la partie solo et en ligne.
+ */
+export function readMove(inp: Input, cam: PlayerCamera, frozen: boolean): MoveInput {
+  let f = 0;
+  let r = 0;
+  if (!frozen) {
+    if (inp.held('KeyW') || inp.held('ArrowUp')) f += 1;
+    if (inp.held('KeyS') || inp.held('ArrowDown')) f -= 1;
+    if (inp.held('KeyD') || inp.held('ArrowRight')) r += 1;
+    if (inp.held('KeyA') || inp.held('ArrowLeft')) r -= 1;
+  }
+  const [fx, fz] = cam.forward;
+  // droite du regard = (-cos, sin) pour un avant (sin, cos)
+  let x = fx * f - fz * r;
+  let z = fz * f + fx * r;
+  const len = Math.hypot(x, z);
+  if (len > 1) {
+    x /= len;
+    z /= len;
+  }
+  return { x, z, run: !frozen && (inp.held('ShiftLeft') || inp.held('ShiftRight')), jump: !frozen && inp.consume('Space') };
+}
+
 export interface GameInfo {
   seed: number;
   player: { id: string; variant: string; firstName: string };
@@ -104,30 +129,7 @@ export class Game {
     const m = inp.takeMouse();
     if (!this.frozen) this.cam.look(m.dx, m.dy, m.wheel);
     if (!this.frozen && inp.consume('KeyV')) this.cam.toggle(p);
-    // commandes relatives au regard : avant / arrière / côtés (ZQSD = WASD physiques, flèches)
-    let f = 0;
-    let r = 0;
-    if (!this.frozen) {
-      if (inp.held('KeyW') || inp.held('ArrowUp')) f += 1;
-      if (inp.held('KeyS') || inp.held('ArrowDown')) f -= 1;
-      if (inp.held('KeyD') || inp.held('ArrowRight')) r += 1;
-      if (inp.held('KeyA') || inp.held('ArrowLeft')) r -= 1;
-    }
-    const [fx, fz] = this.cam.forward;
-    // droite du regard = (-cos, sin) pour un avant (sin, cos)
-    let x = fx * f - fz * r;
-    let z = fz * f + fx * r;
-    const len = Math.hypot(x, z);
-    if (len > 1) {
-      x /= len;
-      z /= len;
-    }
-    const cmd: MoveInput = {
-      x,
-      z,
-      run: !this.frozen && (inp.held('ShiftLeft') || inp.held('ShiftRight')),
-      jump: !this.frozen && inp.consume('Space'),
-    };
+    const cmd = readMove(inp, this.cam, this.frozen);
     p.update(dt, cmd, this.cam.mode === 'subjective' ? this.cam.yaw : null);
     for (const n of this.npcs) this.updateNpc(n, dt);
     this.cam.update(dt, p, this.village.collision);

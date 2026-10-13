@@ -1,6 +1,6 @@
 /**
- * Point d'entrée : construit le village (avec écran de chargement), puis ouvre la visionneuse d'inspection.
- * Le gameplay n'est pas encore branché : cette page sert à parcourir et vérifier la map.
+ * Point d'entrée : construit le village (écran de chargement), puis ouvre le menu : créer ou rejoindre une
+ * partie en ligne (composition des rôles, salon), exploration solo, ou inspection de la map.
  */
 import { buildVillage } from './village/village';
 import { VillageView, type Quality, type RoofMode } from './village/view';
@@ -8,6 +8,9 @@ import { Input } from './input';
 import { Game } from './characters/game';
 import { VARIANTS, cardUrl, type Sex } from './characters/catalog';
 import { loadCharacter } from './characters/assets';
+import { GameUi } from './client/ui';
+import { OnlineGame } from './client/online';
+import { net } from './client/net';
 
 const app = document.getElementById('app')!;
 const loading = document.createElement('div');
@@ -92,78 +95,93 @@ view.onInfo = (i) => {
 };
 requestAnimationFrame(() => loading.classList.add('done'));
 
-// ── jeu : choix du sexe, apparence tirée au sort, contrôle du personnage ──
-const choose = document.createElement('div');
-choose.className = 'choose';
-choose.innerHTML = `<div class="choose-box">
-  <h1>Nouvelle partie</h1>
-  <p>Choisissez votre personnage. Son apparence sera tirée au sort parmi les villageois disponibles.</p>
-  <div class="choose-row"><button data-sex="M">Masculin</button><button data-sex="F">Féminin</button></div>
-  <button class="link inspect">Explorer la map sans personnage</button>
-  <div class="choose-status"></div>
-</div>`;
-document.body.appendChild(choose);
+// ── jeu : menu (créer / rejoindre une partie, exploration solo), salon, partie en ligne ──
 const hud = document.createElement('div');
 hud.className = 'game-hud';
 hud.innerHTML = `<div class="who"><img alt=""><div><div class="who-name"></div><div class="who-sub"></div></div></div>
   <div class="game-help">Cliquez pour diriger la caméra · <kbd>Z Q S D</kbd> se déplacer · <kbd>Maj</kbd> courir · <kbd>Espace</kbd> sauter · <kbd>V</kbd> vue subjective · molette : distance · <kbd>Échap</kbd> libérer la souris</div>
-  <div class="game-buttons"><button class="new-game">Nouvelle partie</button><button class="to-inspect">Inspecter la map</button></div>`;
+  <div class="game-buttons"><button class="to-menu">Menu</button><button class="to-inspect">Inspecter la map</button></div>`;
 document.body.appendChild(hud);
-const status = choose.querySelector('.choose-status') as HTMLElement;
 
-function showChoice(on: boolean) {
-  choose.classList.toggle('open', on);
-  game.frozen = on;
-  if (on) input.unlock();
-}
-function enterGame() {
+const online = new OnlineGame(village, view.scene, view.camera, input);
+let onlineKey = '';
+
+function enterSolo() {
   view.driver = { update: (dt) => game.update(dt) };
   document.body.classList.add('playing');
+  document.body.classList.remove('online');
   input.flush();
 }
 function enterInspection() {
   view.driver = null;
-  document.body.classList.remove('playing');
+  document.body.classList.remove('playing', 'online');
   input.unlock();
-  showChoice(false);
 }
-for (const b of choose.querySelectorAll<HTMLButtonElement>('[data-sex]'))
-  b.onclick = async () => {
-    status.textContent = 'Le village prépare votre personnage…';
-    for (const x of choose.querySelectorAll('button')) (x as HTMLButtonElement).disabled = true;
-    try {
-      const info = await game.start(b.dataset.sex as Sex);
-      (hud.querySelector('.who img') as HTMLImageElement).src = cardUrl(info.player.variant);
-      hud.querySelector('.who-name')!.textContent = info.player.firstName;
-      hud.querySelector('.who-sub')!.textContent = `${b.dataset.sex === 'F' ? 'Personnage féminin' : 'Personnage masculin'} · modèle ${info.player.variant}`;
-      status.textContent = '';
-      showChoice(false);
-      enterGame();
-    } catch (e) {
-      status.textContent = `Impossible de charger le personnage : ${(e as Error).message}`;
-    } finally {
-      for (const x of choose.querySelectorAll('button')) (x as HTMLButtonElement).disabled = false;
+const gameUi = new GameUi({
+  async solo(sex: Sex) {
+    const info = await game.start(sex);
+    (hud.querySelector('.who img') as HTMLImageElement).src = cardUrl(info.player.variant);
+    hud.querySelector('.who-name')!.textContent = info.player.firstName;
+    hud.querySelector('.who-sub')!.textContent = `${sex === 'F' ? 'Personnage féminin' : 'Personnage masculin'} · modèle ${info.player.variant}`;
+    enterSolo();
+  },
+  enterOnline() {
+    // nouvelle partie (ou relance) : personnages recréés avec les apparences tirées par le serveur
+    const key = JSON.stringify(net.game?.appearances ?? {});
+    if (key !== onlineKey) {
+      onlineKey = key;
+      game.end();
+      online.dispose();
+      void online.ensure();
     }
-  };
-choose.querySelector('.inspect')!.addEventListener('click', () => enterInspection());
-hud.querySelector('.new-game')!.addEventListener('click', () => showChoice(true));
+    if (view.driver?.update !== onlineUpdate) {
+      view.driver = { update: onlineUpdate };
+      document.body.classList.add('playing', 'online');
+      input.flush();
+    }
+  },
+  leaveOnline() {
+    online.dispose();
+    onlineKey = '';
+    enterInspection();
+    if (net.lobby) {
+      // retour au salon après les résultats : l'hôte peut relancer une partie
+      net.game = null;
+      net.secret = null;
+      gameUi.render();
+    } else gameUi.showMenu(true);
+  },
+  inspect: () => enterInspection(),
+});
+const onlineUpdate = (dt: number) => online.update(dt);
+gameUi.attach(online);
+// compte à rebours des votes, actions possibles : rafraîchis quatre fois par seconde
+setInterval(() => net.game && gameUi.render(), 250);
+
+hud.querySelector('.to-menu')!.addEventListener('click', () => {
+  enterInspection();
+  gameUi.showMenu(true);
+});
 hud.querySelector('.to-inspect')!.addEventListener('click', () => enterInspection());
 ui.querySelector('.to-game')!.addEventListener('click', () => {
-  if (game.player) enterGame();
-  else showChoice(true);
+  if (net.game && net.lobby?.phase === 'partie') gameUi.render();
+  else if (game.player) enterSolo();
+  else gameUi.showMenu(true);
 });
 app.addEventListener('click', () => {
-  if (view.driver && !game.frozen) input.lock();
+  if (view.driver && net.game?.phase !== 'reunion') input.lock();
 });
-showChoice(true);
 
 // accroche de contrôle (captures automatiques, inspection en console)
 (window as unknown as { __village: unknown }).__village = {
   view,
   village,
   game,
+  online,
+  net,
   input,
-  enterGame,
+  gameUi,
+  enterGame: enterSolo,
   enterInspection,
   /** contrôle : charge les 40 personnages et renvoie les anomalies de squelette ou d'animation */
   checkAll: () => Promise.all(VARIANTS.map((v) => loadCharacter(v.id).then((b) => ({ id: v.id, clips: b.clips.size, warnings: b.warnings, height: b.height }), (e) => ({ id: v.id, error: String(e) })))),

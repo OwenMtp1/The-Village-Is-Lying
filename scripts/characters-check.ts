@@ -6,12 +6,12 @@
  *  4. saut : décollage, apogée, atterrissage ;
  *  5. captures : vue épaule et subjective, rue, intérieur, escalier, saut.
  *
- *   npm run build && npx vite preview --port 4173 &   puis   npx tsx scripts/characters-check.ts
+ *   npm run build && npm start &   puis   npx tsx scripts/characters-check.ts
  */
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { chromium } from 'playwright-core';
 
-const BASE = process.env.BASE ?? 'http://localhost:4173';
+const BASE = process.env.BASE ?? 'http://localhost:3001';
 const OUT = process.env.OUT ?? 'screenshots/personnages';
 mkdirSync(OUT, { recursive: true });
 const browser = await chromium.launch({ executablePath: process.env.CHROMIUM_PATH ?? '/opt/pw-browsers/chromium-1194/chrome-linux/chrome', args: ['--use-angle=swiftshader', '--enable-unsafe-swiftshader'] });
@@ -29,16 +29,14 @@ const all: any[] = await page.evaluate(`window.__village.checkAll()`);
 const bad = all.filter((a) => a.error || a.warnings?.length);
 console.log(`1. ${all.length} personnages chargés, ${all.filter((a) => !a.error).length} sans erreur ; clips par personnage : ${[...new Set(all.map((a) => a.clips))].join(', ')} ; anomalies : ${bad.length ? JSON.stringify(bad) : 'aucune'}`);
 
-// 2. choix du sexe
+// 2. choix du sexe (exploration solo : même tirage que les parties en ligne)
 const picks: string[] = [];
 for (const sex of ['F', 'M', 'F', 'M', 'F']) {
-  await page.evaluate(`document.querySelector('[data-sex="${sex}"]').click()`);
-  await page.waitForFunction(`window.__village.game.player && window.__village.game.info`, null, { timeout: 120_000 });
-  const v: string = await page.evaluate(`window.__village.game.info.player.variant`);
+  const v: string = await page.evaluate(`window.__village.game.start('${sex}').then((i) => i.player.variant)`);
   picks.push(`${sex}→${v}`);
   if (!v.startsWith(sex.toLowerCase())) throw new Error(`apparence incohérente ${sex} → ${v}`);
-  if (sex !== 'F' || picks.length < 5) await page.evaluate(`(() => { const g = window.__village.game; for (const b of document.querySelectorAll('.new-game')) b.click(); })()`);
 }
+await page.evaluate(`window.__village.enterGame()`);
 console.log(`2. tirages : ${picks.join(' · ')}`);
 
 // helpers dans la page (code en chaîne : pas de transformation par le compilateur de scripts)
