@@ -1,21 +1,7 @@
-# Minuit au village
+# The Village Is Lying
 
-Environnement 3D du village médiéval de **Minuit au village**, jeu d'enquête multijoueur (Three.js r170).
-Cette étape ne contient que le décor : le gameplay (personnage, rôles, réseau) viendra ensuite.
-
-Le village est une seule zone continue d'environ 250 m × 250 m, entourée de forêt et de collines :
-
-| Quartier | Contenu |
-|---|---|
-| **Place centrale** | puits couvert, étals de marché, bancs, lanternes, terrasse de la **Taverne du Corbeau Borgne**, six rues qui en partent |
-| **Quartier commerçant** (Grand-Rue) | apothicairerie, forge (auvent, conduit), boulangerie (four), échoppes du tailleur, du cordonnier, du mercier, maisons de marchands, passages étroits |
-| **Quartier résidentiel** | rue des Tisserands, ruelle des Jardins, rue du Puits : maisons mitoyennes ou isolées, 1 à 3 niveaux, chaumières, jardins clos et potagers, lavoir |
-| **Quartier de l'église** | église Saint-Aubin (nef, chœur, clocher-porche avec cloche et flèche), parvis et calvaire, cimetière clos, **poste du shérif** (bureau, cellule grillagée, armurerie, archives), presbytère |
-| **Abords** | écuries du relais (stalles, sellerie, fenil), grange aux dîmes, ferme et champs, **maison abandonnée** (toit crevé, fenêtres condamnées, cave, grenier), chemins vers la forêt |
-
-**52 bâtiments, 221 pièces**, tous construits avec leurs intérieurs : planchers, cloisons et portes, escaliers avec
-paliers et garde-corps, échelles vers les combles, caves, cheminées avec âtre, mobilier adapté à chaque pièce.
-Les toits sont des groupes séparés (`toit`) : on peut les masquer pour voir l'étage depuis le dessus.
+Jeu d'enquête multijoueur en 3D (Three.js r170, TypeScript, Socket.IO) : cette nuit, l'un des villageois est un
+tueur. Le village médiéval complet (52 bâtiments, 221 pièces meublées) sert de terrain de jeu.
 
 ## Lancer
 
@@ -26,8 +12,21 @@ npm run dev        # serveur de jeu (port 3001) + page (http://localhost:5173)
 npm run build && npm start   # tout sur http://localhost:3001
 ```
 
-La page construit le village (quelques secondes, barre de progression), puis ouvre le menu :
-**créer une partie**, **rejoindre** un salon avec son code, **exploration solo** ou inspection de la map.
+La page construit le village (barre de progression ; en cas d'échec — WebGL absent, fichier manquant — un message
+explique quoi faire), puis ouvre le **menu principal** sur une vue cinématique de nuit au-dessus des toits :
+
+| Entrée | Contenu |
+|---|---|
+| **Jouer** | nom, sexe du personnage ; *partie en ligne* (composition des rôles, création du salon) ou *exploration solo* |
+| **Rejoindre une partie** | code de 4 lettres donné par l'hôte (désactivé, avec explication, dans la démo sans serveur) |
+| **Paramètres** | sensibilité et inversion de la souris, volumes (général, musique, effets, ambiance), qualité graphique, aide des commandes, réduction des animations — appliqués tout de suite, gardés dans le navigateur |
+| **Crédits** | personnages, textures, sons, logiciels et licences |
+
+Navigation à la souris ou au clavier (flèches, Entrée, Échap pour revenir). Pas de bouton « Quitter » : une page web
+ne peut pas fermer son onglet ; en partie, **Échap** (ou ☰) ouvre le menu de pause : reprendre, paramètres,
+commandes, *quitter la partie*. Le pied du menu indique l'état réel de la connexion au serveur de parties.
+Le titre et les accroches se modifient dans `src/ui/brand.ts`. « Explorer la carte librement » ouvre l'outil
+d'inspection (points de vue, vol libre, toits).
 
 ## Parties en ligne
 
@@ -35,8 +34,10 @@ La page construit le village (quelques secondes, barre de progression), puis ouv
   sexe), et **composition des rôles** : tueurs, shérifs, détectives, villageois (boutons − / +), préréglages
   (classique 6 et 8, plusieurs tueurs 8, paranoïa 10). Le total est affiché en direct ; de 4 à 10 joueurs,
   au moins un tueur, plus d'innocents que de tueurs. Une composition invalide est expliquée, jamais corrigée.
-- **Salon** : « 6 / 8 joueurs connectés », « Il manque 2 joueurs pour commencer ». L'hôte peut changer la
-  composition jusqu'au lancement ; le bouton « Lancer » ne s'active qu'au complet. Si l'hôte part, le plus
+- **Salon** : code à copier, places occupées et libres, « 6 / 8 joueurs connectés », « Il manque 2 joueurs pour
+  commencer », arrivées, départs, déconnexions annoncés ; chaque joueur peut se dire **prêt** (indication pour
+  l'hôte, ne bloque pas le lancement). L'hôte peut changer la composition jusqu'au lancement ; le bouton « Lancer »
+  ne s'active qu'au complet. Si l'hôte part, le plus
   ancien joueur prend la main. Salon complet ou partie commencée : on ne peut plus entrer (sauf reconnexion).
 - **Rôles** : distribués par le serveur dans les quantités exactes, chaque joueur ne reçoit que le sien ; les
   tueurs connaissent leurs complices. Tous les rôles sont révélés à la fin.
@@ -48,10 +49,21 @@ La page construit le village (quelques secondes, barre de progression), puis ouv
 | Détective | une enquête : savoir si la personne proche est un tueur (résultat privé) | `R` |
 | Tous | signaler un corps (`T`), une réunion d'urgence par joueur (`U`), voter pendant les réunions | |
 
+**Pendant la partie** : carte du rôle secret (icône + nom + état des pouvoirs : délai d'élimination, balle,
+enquête, réunion d'urgence), actions possibles affichées selon la situation, notifications (icône + texte,
+jamais la couleur seule), **journal d'enquête** (`J` : vos enquêtes, habitants vivants ou morts, événements
+publics — jamais la position de quiconque), écran d'élimination, réunion avec portraits, compte à rebours et
+« a voté », puis **résultats** : camp gagnant et raison, victoire ou défaite pour vous, rôle et sort de chacun,
+déroulé. « Retour au salon » efface la partie pour tous (les joueurs partis libèrent leur place) et l'hôte peut
+relancer une manche.
+
 Victoire recalculée après chaque mort, sur les vivants : les innocents gagnent quand tous les tueurs sont
 éliminés, les tueurs quand ils sont au moins aussi nombreux que les innocents. Les éliminés ne votent plus.
 Réglages : `src/shared/rules.ts`. Le serveur (`src/server/`) revérifie chaque action (rôle, portée, délais,
-munitions, vivants, phase) et ignore les positions impossibles.
+munitions, vivants, phase, **ligne de vue** à travers les murs, planchers et relief du village pour le tir,
+l'élimination et l'enquête) et ignore les positions impossibles. Une réunion se tient au plus une fois par corps ;
+un vote par vivant ; égalité ou majorité d'abstentions : personne n'est éliminé. Pas de limite de durée de partie
+(choix demandé : on joue jusqu'à la victoire d'un camp) ; la limite de temps porte sur les votes (60 s).
 
 ## Jour, nuit et lampe de poche
 
@@ -61,6 +73,17 @@ munitions, vivants, phase) et ignore les positions impossibles.
 - Chaque joueur a une **lampe de poche** dans son inventaire (emplacement en haut à droite, touche `L`) : un
   faisceau puissant qui suit le regard, avec ombres ; les lampes allumées des autres joueurs sont visibles.
   Réglages : `src/characters/flashlight.ts` et `DAY_CYCLE` dans `src/shared/rules.ts`.
+
+## Son et vie du décor
+
+- Tous les sons sont **synthétisés par le navigateur** (Web Audio, `src/audio/`) : vent, grillons et chouette la
+  nuit, oiseaux le jour, nappe musicale du menu, battement de cœur pendant les réunions, pas (les vôtres et ceux des
+  joueurs proches, atténués avec la distance), saut, lampe, cloche de réunion, coup de feu, vote, mort, victoire,
+  défaite, sons d'interface. Aucun fichier sonore tiers, donc aucune licence à vérifier. Le son démarre au premier
+  clic ou à la première touche (règle des navigateurs).
+- Décor vivant (`src/village/life.ts`), sans géométrie recalculée : arbres, buissons et herbes ondulent au vent,
+  lucioles la nuit dans les jardins et à la lisière, brume qui respire, lanternes qui vacillent ; chaque entrée de
+  maison a sa lanterne pour repérer les portes de nuit.
 
 ## Mettre en ligne (Render)
 
@@ -92,7 +115,8 @@ npm test            # map, plans intérieurs, contrôleur des personnages, rôle
 npm run typecheck
 npm run build
 npm run build && npm start &         # puis, dans un autre terminal :
-npx tsx scripts/roles-ui-check.ts     # parcours création → salon → lancement dans le navigateur
+npx tsx scripts/ui-check.ts          # menu, paramètres, salon (arrivées/départ), partie, pause, réunion, tir, résultats, nouvelle manche
+npx tsx scripts/solo-check.ts        # exploration solo, pause → menu, inspection, modèle de personnage manquant
 npx tsx scripts/characters-check.ts   # 40 personnages, glissement des pieds, saut, captures
 BASE=http://localhost:3001 npm run shots   # captures de tous les points de vue de la map
 ```
@@ -105,11 +129,14 @@ trémie ou dépasse le plafond, une porte d'entrée sur rue, un intérieur meubl
 
 ```
 src/
-  main.ts                 point d'entrée : chargement, menu, solo / en ligne / inspection
+  main.ts                 point d'entrée : chargement, modes (menu, solo, en ligne, inspection), réglages, sons
   input.ts                gestionnaire unique du clavier et de la souris
   shared/                 roles.ts (composition, validation, préréglages), rules.ts, protocol.ts
-  server/                 app.ts (Socket.IO, pages), room.ts (salon et partie), index.ts
-  client/                 net.ts (connexion), ui.ts (menu, composition, salon, rôle, votes), online.ts
+  server/                 app.ts (Socket.IO, pages, lignes de vue), room.ts (salon et partie), index.ts
+  client/                 net.ts (connexion), ui.ts (chef d'orchestre des écrans), online.ts (partie en ligne)
+  ui/                     menu, salon, interface de partie et résultats, pause, paramètres, composition, icônes
+  audio/                  moteur Web Audio, effets, ambiance et musique, pas
+  styles/                 base (direction artistique), menu et salon, interface de jeu, inspection
   characters/             catalogue, apparence, chargement, animation, contrôleur, caméra, partie solo
   village/
     layout.ts             plan : relief, rues, places, quartiers, fiche de chaque bâtiment (données pures)
@@ -122,10 +149,12 @@ src/
     atmosphere.ts         ciel nocturne, lune et ombres, brouillard, lumières chaudes dynamiques
     village.ts            assemblage par étapes (chargement non bloquant)
     view.ts               visionneuse : rendu, post-traitement, caméras, points de vue, toits
+    cinematic.ts          caméra du menu (travelling au-dessus des toits)
+    life.ts               vent dans la végétation, lucioles, brume
     textures.ts           textures médiévales générées par code (pierre, pavés, enduit, colombages, tuiles…)
     geom.ts               murs percés, dalles à trémies, fusion des géométries par matériau
 public/textures/          herbe, parquet, eau (exemples Three.js) et ciel HDR (Poly Haven, CC0)
-tests/village.test.ts     cohérence de la map
+tests/                    map, personnages, rôles et salons, règles de partie (lignes de vue, manches), serveur réel, réglages
 scripts/                  captures de contrôle, vérification rapide de l'implantation
 ```
 

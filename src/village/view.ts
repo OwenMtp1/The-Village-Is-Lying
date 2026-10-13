@@ -93,7 +93,7 @@ export class VillageView {
   mode: CamMode = 'orbite';
   readonly views: Viewpoint[];
   onInfo: (info: { place: string; fps: number; calls: number; tris: number; lights: number }) => void = () => {};
-  private fpsAcc = { n: 0, t: 0, fps: 60 };
+  fpsAcc = { n: 0, t: 0, fps: 60 };
   private disposed = false;
   /** boucle suspendue (captures de contrôle : rendu image par image avec `renderFrame`) */
   paused = false;

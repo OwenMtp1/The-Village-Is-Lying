@@ -114,7 +114,8 @@
 .results.w-innocents { background: radial-gradient(ellipse at 50% 0%, rgba(120, 90, 30, 0.5), rgba(4, 6, 10, 0.94) 70%); }
 .res-box { width: min(760px, 100%); text-align: center; animation: mm-rise 0.7s var(--ease) both; }
 .res-box > .mm-kicker { font-size: 14px; }
-.res-box h2 { display: flex; justify-content: center; align-items: center; gap: 12px; margin: 8px 0; font: 700 clamp(26px, 4.6vw, 46px) var(--display); letter-spacing: 0.06em; text-transform: uppercase; }
+.res-box h2 { display: block; margin: 8px 0; font: 700 clamp(26px, 4.6vw, 46px) var(--display); letter-spacing: 0.06em; text-transform: uppercase; }
+.res-box h2 .ic { width: 0.8em; height: 0.8em; margin-right: 0.3em; vertical-align: -0.05em; }
 .res-reason { font-size: 18px; font-style: italic; color: var(--ink-2); margin: 0 0 6px; }
 .res-me { color: var(--ink-2); }
 .res-players { list-style: none; padding: 0; margin: 16px 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 8px; text-align: left; }
@@ -147,7 +148,7 @@
 .keys dd { margin: 0; color: var(--muted); }
 
 /* ── notifications ── */
-.toasts { position: fixed; z-index: 40; top: 14px; left: 50%; transform: translateX(-50%); display: flex; flex-direction: column; align-items: center; gap: 6px; width: min(560px, calc(100vw - 32px)); pointer-events: none; }
+.toasts { position: fixed; z-index: 40; bottom: 24px; left: 50%; transform: translateX(-50%); display: flex; flex-direction: column; align-items: center; gap: 6px; width: min(560px, calc(100vw - 32px)); pointer-events: none; }
 .toast { display: flex; align-items: center; gap: 10px; background: var(--panel-2); border: 1px solid var(--line); border-left: 3px solid var(--gold); border-radius: var(--radius); padding: 8px 14px; font-size: 15px; box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4); animation: toast-in 0.35s var(--ease) both; transition: opacity 0.4s, transform 0.4s; }
 .toast .ic { color: var(--gold); width: 18px; height: 18px; }
 .toast.out { opacity: 0; transform: translateY(-6px); }
@@ -158,7 +159,7 @@
 .toast.k-indice { border-left-color: var(--c-detective); }
 .toast.k-indice .ic { color: var(--c-detective); }
 @keyframes toast-in { from { opacity: 0; transform: translateY(-8px); } to { opacity: 1; transform: none; } }
-.mode-online .toasts, .mode-solo .toasts { top: 64px; }
+.mode-online .toasts, .mode-solo .toasts { top: 64px; bottom: auto; }
 
 @media (max-width: 760px) {
   .role-panel { top: auto; bottom: 10px; left: 8px; right: 8px; width: auto; }

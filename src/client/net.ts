@@ -24,13 +24,20 @@ class Net {
   posesAt = 0;
   me = '';
   connected = false;
+  /** la dernière tentative de connexion a échoué (serveur injoignable) */
+  failed = false;
   private listeners = new Set<Listener>();
   onEvent: (e: GameEvent) => void = () => {};
 
   constructor() {
     this.socket = io({ autoConnect: false, transports: ['websocket', 'polling'] });
+    this.socket.on('connect_error', () => {
+      this.failed = true;
+      this.emit();
+    });
     this.socket.on('connect', () => {
       this.connected = true;
+      this.failed = false;
       this.rejoin();
       this.emit();
     });

@@ -830,7 +830,10 @@ export function buildBuilding(b: BuildingSpec, props: PropSet): BuiltBuilding {
     if (busy) {
       lanternAt(main.at - main.w / 2 - 0.45, 2.3);
       if (b.kind === 'tavern' || b.kind === 'sheriff' || b.kind === 'church') lanternAt(main.at + main.w / 2 + 0.45, 2.3);
-    } else if (r() < 0.35 && b.kind === 'house') lanternAt(main.at + main.w / 2 + 0.4, 2.2);
+    } else if (b.kind !== 'abandoned') {
+      // chaque entrée a sa lanterne : les portes se repèrent de nuit depuis la rue (côté tiré au sort)
+      lanternAt(main.at + (r() < 0.5 ? 1 : -1) * (main.w / 2 + 0.4), 2.2);
+    }
     if (b.kind === 'tavern' || b.kind === 'apothecary' || b.kind === 'shop' || b.kind === 'bakery' || b.kind === 'forge') {
       const p = toWorld(F.at(main.at + main.w / 2 + 1.1, 2.6, 0));
       props.place(b.kind === 'tavern' ? 'tavernSign' : 'shopSign', p[0], p[1], p[2], rotWorld + Math.PI / 2, true);

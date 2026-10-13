@@ -143,9 +143,9 @@ export class MainMenu {
       return;
     }
     // état réel du socket : jamais « connecté » sans connexion établie
-    const s = net.connected ? 'connecte' : net.socket.active ? 'connexion' : 'hors-ligne';
+    const s = net.connected ? 'connecte' : net.failed ? 'hors-ligne' : 'connexion';
     el.dataset.state = s;
-    el.textContent = s === 'connecte' ? 'Serveur de parties : connecté' : s === 'connexion' ? 'Serveur de parties : connexion…' : 'Serveur de parties : injoignable';
+    el.textContent = s === 'connecte' ? 'Serveur de parties : connecté' : s === 'connexion' ? 'Serveur de parties : connexion…' : 'Serveur de parties : injoignable (nouvel essai automatique)';
   }
 
   private needName(screen: Screen) {

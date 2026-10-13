@@ -45,6 +45,7 @@ button { font-family: inherit; }
   box-shadow: 0 0 0 rgba(232, 183, 101, 0); transition: box-shadow 0.25s, transform 0.15s, filter 0.2s; }
 .primary:hover:not(:disabled) { box-shadow: 0 0 24px rgba(232, 183, 101, 0.45); transform: translateY(-1px); }
 .primary:active:not(:disabled) { transform: translateY(1px); }
+.primary:focus-visible { outline: none; box-shadow: 0 0 0 3px var(--night), 0 0 0 5px var(--gold-2); }
 .primary:disabled { background: rgba(255, 255, 255, 0.07); border-color: var(--line); color: var(--muted); cursor: not-allowed; }
 .ghost { font: 500 13px var(--display); letter-spacing: 0.12em; text-transform: uppercase; padding: 12px 16px; background: transparent; color: var(--ink-2); border: 1px solid var(--line); border-radius: var(--radius); cursor: pointer; transition: border-color 0.2s, color 0.2s; }
 .ghost:hover:not(:disabled) { border-color: var(--line-2); color: var(--gold-2); }
