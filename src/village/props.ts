@@ -29,7 +29,7 @@ const M = {
   soil: () => VM.dirtFloor(),
   leaf: (c: string) => VM.paint(c, 0.9),
   paper: () => VM.paint('#d9cfb2', 0.95),
-  lanternGlass: () => VM.glow('#ffc874', 4.5),
+  lanternGlass: () => VM.glow('#ffc874', 2.2),
 };
 
 type Build = (b: P) => void;

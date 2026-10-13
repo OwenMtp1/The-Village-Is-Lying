@@ -21,10 +21,45 @@ Les toits sont des groupes séparés (`toit`) : on peut les masquer pour voir l'
 
 ```bash
 npm install
-npm run dev        # http://localhost:5173
+npm run dev        # serveur de jeu (port 3001) + page (http://localhost:5173)
+# ou, version compilée :
+npm run build && npm start   # tout sur http://localhost:3001
 ```
 
-La page construit le village (quelques secondes, barre de progression), puis ouvre la visionneuse d'inspection.
+La page construit le village (quelques secondes, barre de progression), puis ouvre le menu :
+**créer une partie**, **rejoindre** un salon avec son code, **exploration solo** ou inspection de la map.
+
+## Parties en ligne
+
+- **Création** : nom, sexe du personnage (l'apparence est tirée au sort au lancement parmi les 20 modèles de ce
+  sexe), et **composition des rôles** : tueurs, shérifs, détectives, villageois (boutons − / +), préréglages
+  (classique 6 et 8, plusieurs tueurs 8, paranoïa 10). Le total est affiché en direct ; de 4 à 10 joueurs,
+  au moins un tueur, plus d'innocents que de tueurs. Une composition invalide est expliquée, jamais corrigée.
+- **Salon** : « 6 / 8 joueurs connectés », « Il manque 2 joueurs pour commencer ». L'hôte peut changer la
+  composition jusqu'au lancement ; le bouton « Lancer » ne s'active qu'au complet. Si l'hôte part, le plus
+  ancien joueur prend la main. Salon complet ou partie commencée : on ne peut plus entrer (sauf reconnexion).
+- **Rôles** : distribués par le serveur dans les quantités exactes, chaque joueur ne reçoit que le sien ; les
+  tueurs connaissent leurs complices. Tous les rôles sont révélés à la fin.
+
+| Rôle | Capacité (individuelle) | Touche |
+|---|---|---|
+| Tueur | éliminer un innocent à portée (2,2 m), délai de 25 s propre à chaque tueur | `E` |
+| Shérif | une balle : abattre la personne visée (14 m) ; s'il abat un innocent, il meurt aussi | `F` |
+| Détective | une enquête : savoir si la personne proche est un tueur (résultat privé) | `R` |
+| Tous | signaler un corps (`T`), une réunion d'urgence par joueur (`U`), voter pendant les réunions | |
+
+Victoire recalculée après chaque mort, sur les vivants : les innocents gagnent quand tous les tueurs sont
+éliminés, les tueurs quand ils sont au moins aussi nombreux que les innocents. Les éliminés ne votent plus.
+Réglages : `src/shared/rules.ts`. Le serveur (`src/server/`) revérifie chaque action (rôle, portée, délais,
+munitions, vivants, phase) et ignore les positions impossibles.
+
+## Personnages
+
+Base **Microsoft Rocketbox** (MIT) : 40 personnages distincts (20 femmes, 20 hommes), même squelette Biped,
+animations capturées partagées par sexe (`public/characters/`). Marche et course « en place » mélangées selon la
+vitesse réelle, cadence calculée pour que les pieds ne glissent pas ; saut (Rocketbox n'a pas d'animation de
+saut : impulsion et amorti avec le clip « accroupi », pose aérienne procédurale) ; caméra derrière l'épaule
+droite, vue subjective avec `V`. Réglages : `src/characters/config.ts`.
 
 | Commande | Effet |
 |---|---|
@@ -38,10 +73,13 @@ La page construit le village (quelques secondes, barre de progression), puis ouv
 ## Vérifier
 
 ```bash
-npm test            # implantation (aucun chevauchement, aucun bâtiment sur une rue) et plans intérieurs
+npm test            # map, plans intérieurs, contrôleur des personnages, rôles et salons, serveur réel
 npm run typecheck
 npm run build
-npm run dev & npm run shots   # captures de tous les points de vue dans screenshots/ (Chromium headless)
+npm run build && npm start &         # puis, dans un autre terminal :
+npx tsx scripts/roles-ui-check.ts     # parcours création → salon → lancement dans le navigateur
+npx tsx scripts/characters-check.ts   # 40 personnages, glissement des pieds, saut, captures
+BASE=http://localhost:3001 npm run shots   # captures de tous les points de vue de la map
 ```
 
 Les tests vérifient pour chaque bâtiment : escaliers et trémies à l'intérieur des murs, aucune cloison qui coupe
@@ -52,7 +90,12 @@ trémie ou dépasse le plafond, une porte d'entrée sur rue, un intérieur meubl
 
 ```
 src/
-  main.ts                 point d'entrée : chargement, visionneuse, panneau d'inspection
+  main.ts                 point d'entrée : chargement, menu, solo / en ligne / inspection
+  input.ts                gestionnaire unique du clavier et de la souris
+  shared/                 roles.ts (composition, validation, préréglages), rules.ts, protocol.ts
+  server/                 app.ts (Socket.IO, pages), room.ts (salon et partie), index.ts
+  client/                 net.ts (connexion), ui.ts (menu, composition, salon, rôle, votes), online.ts
+  characters/             catalogue, apparence, chargement, animation, contrôleur, caméra, partie solo
   village/
     layout.ts             plan : relief, rues, places, quartiers, fiche de chaque bâtiment (données pures)
     plans.ts              plans intérieurs : niveaux, pièces, cloisons, escaliers, fenêtres, mobilier (données pures)

@@ -10,6 +10,7 @@ import { VARIANTS, cardUrl, type Sex } from './characters/catalog';
 import { loadCharacter } from './characters/assets';
 import { GameUi } from './client/ui';
 import { OnlineGame } from './client/online';
+import { JUMP, MOVE } from './characters/config';
 import { net } from './client/net';
 
 const app = document.getElementById('app')!;
@@ -181,6 +182,8 @@ app.addEventListener('click', () => {
   net,
   input,
   gameUi,
+  /** réglages (contrôles automatiques : essais de vitesses) */
+  config: { MOVE, JUMP },
   enterGame: enterSolo,
   enterInspection,
   /** contrôle : charge les 40 personnages et renvoie les anomalies de squelette ou d'animation */
