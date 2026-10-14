@@ -12,9 +12,10 @@ import { OnlineHud, ResultsScreen, journalHtml, snapshotResult } from '../ui/hud
 import { PauseMenu } from '../ui/pause';
 import { Toasts, type ToastKind } from '../ui/toasts';
 import { net } from './net';
+import type { GFMenuHooks } from '../ui/gunfightUi';
 import type { OnlineGame } from './online';
 
-export type AppMode = 'menu' | 'solo' | 'online' | 'inspection';
+export type AppMode = 'menu' | 'solo' | 'online' | 'inspection' | 'gunfight';
 
 export interface UiHooks {
   mode(): AppMode;
@@ -33,6 +34,11 @@ export interface UiHooks {
   playerPose(): { x: number; z: number; yaw: number } | null;
   /** fiche du personnage (exploration solo) pour l'écran de pause */
   soloCard(): string;
+  /** mode Gunfight : écran du menu, salle ou combat en cours, fiche de pause, sortie */
+  gunfight: GFMenuHooks;
+  gfActive(): boolean;
+  gfPauseCard(): string;
+  quitGunfight(): void;
   /** téléportation (exploration solo) vers un point choisi sur la carte */
   teleport(x: number, z: number, underground: boolean, name: string): void;
 }
@@ -57,6 +63,20 @@ export class GameUi {
       inspect: () => {
         this.menu.show(false);
         hooks.inspect();
+      },
+      gunfight: {
+        create: async (n, sx, st) => {
+          await hooks.gunfight.create(n, sx, st);
+          this.menu.show(false);
+        },
+        join: async (code, n, sx) => {
+          await hooks.gunfight.join(code, n, sx);
+          this.menu.show(false);
+        },
+        solo: async (n, sx, o) => {
+          await hooks.gunfight.solo(n, sx, o);
+          this.menu.show(false);
+        },
       },
     });
     this.lobby = new LobbyScreen({ quit: () => this.quitOnline(), toast: (t, k) => this.toast(t, k) });
@@ -84,7 +104,10 @@ export class GameUi {
     this.pause.onQuit = () => {
       this.setPause(false);
       if (hooks.mode() === 'online') this.quitOnline();
-      else this.backToMenu();
+      else if (hooks.mode() === 'gunfight') {
+        this.setPause(false);
+        hooks.quitGunfight();
+      } else this.backToMenu();
     };
 
     net.subscribe(() => this.render());
@@ -119,7 +142,7 @@ export class GameUi {
   private onKey(e: KeyboardEvent) {
     if ((e.target as HTMLElement)?.tagName === 'INPUT') return;
     const mode = this.hooks.mode();
-    const withMap = mode === 'solo' || mode === 'online' || mode === 'inspection';
+    const withMap = mode === 'solo' || mode === 'online' || mode === 'inspection' || mode === 'gunfight';
     if ((e.code === 'Escape' || e.code === 'KeyM') && withMap && !this.pause.open && !this.results.open && !document.pointerLockElement) {
       if (e.code === 'KeyM') this.pause.setTab('carte');
       this.setPause(true);
@@ -141,7 +164,7 @@ export class GameUi {
     const mode = this.hooks.mode();
     if (document.pointerLockElement || this.pause.open || this.results.open) return;
     if (performance.now() - this.selfUnlockAt < 400) return;
-    if ((mode === 'solo' || mode === 'online') && net.game?.phase !== 'reunion') this.setPause(true);
+    if ((mode === 'solo' || mode === 'online' || mode === 'gunfight') && net.game?.phase !== 'reunion') this.setPause(true);
   }
 
   setPause(on: boolean) {
@@ -156,7 +179,8 @@ export class GameUi {
   /** Panneau de droite de l'écran de pause : rôle et journal (en ligne), personnage (solo). */
   private refreshPauseSide() {
     const G = net.game;
-    if (this.hooks.mode() === 'online' && G) this.pause.setSide(`${this.hud.roleCardHtml()}<div class="pause-journal">${journalHtml(G, net.secret)}</div>`);
+    if (this.hooks.mode() === 'gunfight') this.pause.setSide(this.hooks.gfPauseCard());
+    else if (this.hooks.mode() === 'online' && G) this.pause.setSide(`${this.hud.roleCardHtml()}<div class="pause-journal">${journalHtml(G, net.secret)}</div>`);
     else this.pause.setSide(this.hooks.soloCard());
   }
 
@@ -197,7 +221,7 @@ export class GameUi {
     this.lobby.el.classList.toggle('open', lobbyOpen);
     if (lobbyOpen) this.lobby.render(L!);
     if (L) this.menu.show(false);
-    else if (this.hooks.mode() === 'menu' && !this.menu.open) this.menu.show(true);
+    else if (this.hooks.mode() === 'menu' && !this.menu.open && !this.hooks.gfActive()) this.menu.show(true);
     if (this.pause.open && this.hooks.mode() === 'online') this.refreshPauseSide();
     const hudOpen = inGame && !this.results.open;
     this.hud.el.classList.toggle('open', hudOpen);

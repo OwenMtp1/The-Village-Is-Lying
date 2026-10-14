@@ -5,6 +5,7 @@
 import type { Sex } from '../characters/catalog';
 import type { Composition, Role } from './roles';
 import type { Winner } from './rules';
+import type { GFEvent, GFGameView, GFLobbyView, GFSettings, GFShot, Team } from './gunfight';
 
 export interface LobbyPlayer {
   id: string;
@@ -93,7 +94,21 @@ export interface GameEvent {
 
 export type Ack<T = unknown> = (r: { ok: true; data: T } | { ok: false; error: string }) => void;
 
+type JoinAck = Ack<{ code: string; playerId: string; token: string }>;
+
 export interface ClientToServer {
+  // mode Gunfight
+  'gf:creer': (p: { name: string; sex: Sex; settings: Partial<GFSettings> }, ack: JoinAck) => void;
+  'gf:rejoindre': (p: { code: string; name: string; sex: Sex; token?: string }, ack: JoinAck) => void;
+  'gf:reglages': (p: { settings: Partial<GFSettings> }, ack: Ack) => void;
+  'gf:equipe': (p: { team: Team }, ack: Ack) => void;
+  'gf:lancer': (p: Record<string, never>, ack: Ack) => void;
+  'gf:quitter': () => void;
+  'gf:retour': (p: Record<string, never>, ack: Ack) => void;
+  'gf:pose': (p: PlayerPose) => void;
+  'gf:tir': (p: { target: string | null; aim?: [number, number, number] }, ack: Ack<{ hit: boolean; killed: boolean }>) => void;
+  'gf:couteau': (p: { target: string }, ack: Ack<{ hit: boolean; killed: boolean }>) => void;
+  'gf:recharger': (p: Record<string, never>, ack: Ack) => void;
   'salon:creer': (p: { name: string; sex: Sex; composition: Composition }, ack: Ack<{ code: string; playerId: string; token: string }>) => void;
   'salon:rejoindre': (p: { code: string; name: string; sex: Sex; token?: string }, ack: Ack<{ code: string; playerId: string; token: string }>) => void;
   'salon:composition': (p: { composition: Composition }, ack: Ack) => void;
@@ -112,6 +127,11 @@ export interface ClientToServer {
 }
 
 export interface ServerToClient {
+  'gf:salon': (v: GFLobbyView) => void;
+  'gf:etat': (v: GFGameView) => void;
+  'gf:poses': (p: Record<string, PlayerPose>) => void;
+  'gf:tir': (s: GFShot) => void;
+  'gf:evenement': (e: GFEvent) => void;
   'salon:etat': (v: LobbyView) => void;
   'jeu:etat': (v: GameView) => void;
   'jeu:secret': (v: PrivateInfo) => void;

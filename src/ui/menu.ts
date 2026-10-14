@@ -15,15 +15,17 @@ import { arrowNav, esc, h } from './dom';
 import { GAME_KICKER, GAME_TAGLINE, GAME_TITLE_LINES } from './brand';
 import { profile } from './profile';
 import { settingsPanel } from './settingsPanel';
+import { gunfightMenuScreen, type GFMenuHooks } from './gunfightUi';
 
 export interface MenuHooks {
   create(name: string, sex: Sex, composition: Composition): Promise<unknown>;
   join(code: string, name: string, sex: Sex): Promise<unknown>;
   solo(sex: Sex): Promise<void>;
   inspect(): void;
+  gunfight: GFMenuHooks;
 }
 
-type Screen = 'accueil' | 'jouer' | 'rejoindre' | 'parametres' | 'credits';
+type Screen = 'accueil' | 'jouer' | 'rejoindre' | 'gunfight' | 'parametres' | 'credits';
 
 const CREDITS = `
   <h3>Conception et développement</h3>
@@ -57,6 +59,7 @@ export class MainMenu {
         <nav class="mm-nav" aria-label="Menu principal">
           <button type="button" data-go="jouer">Jouer</button>
           <button type="button" data-go="rejoindre" ${STATIC ? 'disabled aria-describedby="mm-offline"' : ''}>Rejoindre une partie</button>
+          <button type="button" data-go="gunfight" class="gf-nav">Mode Gunfight</button>
           <button type="button" data-go="parametres">Paramètres</button>
           <button type="button" data-go="credits">Crédits</button>
         </nav>
@@ -105,6 +108,10 @@ export class MainMenu {
     for (const slot of this.el.querySelectorAll('.slot-profile')) slot.appendChild(profile.fieldsEl());
     this.el.querySelector('.slot-editor')!.appendChild(this.editor.el);
     this.el.querySelector('.slot-settings')!.appendChild(settingsPanel());
+    // mode Gunfight : son propre écran (créer, rejoindre, solo contre des robots)
+    const gf = gunfightMenuScreen(hooks.gunfight, (t, bad = true) => this.status('gunfight', t, bad));
+    gf.querySelector('.mm-body')!.insertAdjacentHTML('beforeend', '<div class="status" role="status" aria-live="polite"></div>');
+    this.el.appendChild(gf);
     this.bind();
     net.subscribe(() => this.renderNet());
     this.renderNet();

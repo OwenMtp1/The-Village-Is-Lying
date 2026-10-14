@@ -119,6 +119,13 @@ export const sfx = {
     }),
   /** pistolet vide */
   dryFire: () => play((b) => tone(b, b.sfx, 'square', 1500, 1400, 0.06, 0.001, 0.03)),
+  /** coup de feu localisé (Gunfight) : volume selon la distance */
+  gunshotAt: (gain: number) =>
+    play((b) => {
+      const out = spatial(b, 0, gain);
+      noise(b, out, 'lowpass', 4000 * Math.max(0.3, gain), 0.5, 0.8, 0.001, 0.22);
+      tone(b, out, 'sine', 120, 40, 0.6, 0.002, 0.3);
+    }),
   /** cloche de l'église : partiels inharmoniques, longue résonance */
   bell: () =>
     play((b) => {

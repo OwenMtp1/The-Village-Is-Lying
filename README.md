@@ -86,6 +86,26 @@ planchers et toits dans la direction du regard (`Espace` / `C` pour monter / des
   faisceau puissant qui suit le regard, avec ombres ; les lampes allumées des autres joueurs sont visibles.
   Réglages : `src/characters/flashlight.ts` et `DAY_CYCLE` dans `src/shared/rules.ts`.
 
+## Mode Gunfight
+
+**Menu principal → Mode Gunfight** : un autre jeu dans le même village. Tout le monde apparaît armé — pistolet
+(8 balles, `R` pour recharger, `1`) et couteau (`2`) —, chaque élimination rapporte un point, on réapparaît au bout
+de 3 s loin des adversaires (1,5 s de protection). La partie s'arrête au score visé ou à la fin du temps.
+
+| | |
+|---|---|
+| **Créer une salle** | mode, nombre de places (2 à 16), éliminations pour gagner, durée ; un code de 4 lettres à partager |
+| **Rejoindre** | le code donné par l'hôte |
+| **Solo (robots)** | 1 à 11 robots, difficulté facile / normale / difficile ; ils patrouillent, repèrent, se décalent, tirent, rechargent |
+| **Chacun pour soi** | chaque joueur pour lui ; tableau des scores individuel |
+| **Match à mort par équipe** | Équipe Rouge contre Équipe Bleue ; chacun choisit son équipe au salon (« Rejoindre cette équipe »), pas de tir allié, score d'équipe |
+
+En combat : vie, munitions, score et temps, fil des éliminations, viseur avec marqueur de touche, écran
+d'élimination, `Tab` pour le tableau des scores, `Échap` pour la carte et les scores. Le serveur (ou la salle locale
+en solo) vérifie chaque tir : arme, cadence, munitions, portée, visée, ligne de vue, équipe. Règles :
+`src/shared/gunfight.ts`, salle : `src/shared/gunfightRoom.ts` (partagée par le serveur et le solo), tests :
+`tests/gunfight.test.ts`, contrôle dans le navigateur : `scripts/gunfight-check.ts`.
+
 ## Souterrains
 
 À 8 m sous le village, un réseau de galeries éclairées de lanternes, étayées de bois, relie huit salles :

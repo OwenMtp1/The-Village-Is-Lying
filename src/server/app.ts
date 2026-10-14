@@ -9,6 +9,7 @@ import { randomInt } from 'node:crypto';
 import express from 'express';
 import { Server } from 'socket.io';
 import { Room, RoomError, type SightTest } from './room';
+import { gunfightServer } from './gunfightServer';
 import { buildCollisionWorld, type CollisionWorld } from '../village/collision';
 import type { ClientToServer, ServerToClient, Ack, EventKind, Gesture } from '../shared/protocol';
 
@@ -37,12 +38,15 @@ export function createGameServer(opts: { staticDir?: string; random?: () => numb
   /** joueur → socket (messages privés) */
   const sockets = new Map<string, string>();
 
-  const newCode = () => {
+  // codes uniques entre salons d'enquête et salles Gunfight
+  const makeCode = (taken: (c: string) => boolean) => {
     for (;;) {
       const c = Array.from({ length: 4 }, () => LETTERS[randomInt(LETTERS.length)]).join('');
-      if (!rooms.has(c)) return c;
+      if (!rooms.has(c) && !taken(c) && !gunfight.rooms.has(c)) return c;
     }
   };
+  const newCode = () => makeCode(() => false);
+  const gunfight = gunfightServer(io, sight, makeCode, opts.random);
 
   const output = (code: string) => ({
     lobby: (v: Parameters<ServerToClient['salon:etat']>[0]) => io.to(code).emit('salon:etat', v),
@@ -66,6 +70,7 @@ export function createGameServer(opts: { staticDir?: string; random?: () => numb
   });
 
   io.on('connection', (socket) => {
+    gunfight.onConnection(socket);
     let room: Room | null = null;
     let pid = '';
     const guard = <T>(ack: Ack<T> | undefined, fn: () => T) => {
@@ -144,6 +149,7 @@ export function createGameServer(opts: { staticDir?: string; random?: () => numb
 
   // horloge des votes et diffusion des positions (15 fois par seconde)
   const timer = setInterval(() => {
+    gunfight.tick();
     for (const r of rooms.values()) {
       r.tick();
       if (r.phase === 'partie') io.to(r.code).emit('jeu:poses', r.posesView());

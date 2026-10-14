@@ -16,6 +16,8 @@ import { VARIANTS, cardUrl, type Sex } from './characters/catalog';
 import { loadCharacter } from './characters/assets';
 import { GameUi, type AppMode } from './client/ui';
 import { OnlineGame } from './client/online';
+import { GunfightGame } from './client/gunfight';
+import { GunfightController } from './client/gunfightCtl';
 import { JUMP, MOVE } from './characters/config';
 import { Flashlights } from './characters/flashlight';
 import { dayState } from './shared/rules';
@@ -79,11 +81,12 @@ const footsteps = new Footsteps();
 // ── modes ──
 let mode: AppMode = 'menu';
 const setBodyMode = () => {
-  for (const m of ['menu', 'solo', 'online', 'inspection'] as const) document.body.classList.toggle(`mode-${m}`, mode === m);
+  for (const m of ['menu', 'solo', 'online', 'inspection', 'gunfight'] as const) document.body.classList.toggle(`mode-${m}`, mode === m);
   document.body.classList.toggle('playing', mode === 'solo' || mode === 'online');
 };
 const soloUpdate = (dt: number) => game.update(dt);
 const onlineUpdate = (dt: number) => online.update(dt);
+const gunfightUpdate = (dt: number) => gfGame.update(dt);
 const cinematicUpdate = (dt: number) => cinematic.update(dt);
 let inspectRoof: RoofMode = 'auto';
 
@@ -106,7 +109,7 @@ function setMode(m: AppMode) {
     input.unlock();
   } else {
     view.setRoofMode('auto');
-    view.driver = { update: m === 'solo' ? soloUpdate : onlineUpdate };
+    view.driver = { update: m === 'solo' ? soloUpdate : m === 'gunfight' ? gunfightUpdate : onlineUpdate };
   }
   setBodyMode();
 }
@@ -190,7 +193,18 @@ soloHud.innerHTML = `<div class="who"><img alt=""><div><div class="mm-kicker">Ex
   <div class="noclip-badge" role="status">Vol libre — traverse les murs · <kbd>Espace</kbd> / <kbd>C</kbd> monter / descendre · <kbd>Maj</kbd> plus vite · <kbd>N</kbd> pour atterrir</div>`;
 document.body.appendChild(soloHud);
 
+// ── mode Gunfight ──
+const gfGame = new GunfightGame(village, view.scene, view.camera, input);
+let gfCtl: GunfightController;
 const gameUi = new GameUi({
+  gunfight: {
+    create: (n, sx, st) => gfCtl.create(n, sx, st),
+    join: (code, n, sx) => gfCtl.join(code, n, sx),
+    solo: (n, sx, o) => gfCtl.solo(n, sx, o),
+  },
+  gfActive: () => !!gfCtl?.active,
+  gfPauseCard: () => gfCtl.pauseCard(),
+  quitGunfight: () => gfCtl.quit(),
   mode: () => mode,
   async solo(sex: Sex) {
     const info = await game.start(sex);
@@ -223,6 +237,7 @@ const gameUi = new GameUi({
   setPaused(on) {
     game.frozen = on;
     online.paused = on;
+    gfGame.paused = on;
     // exploration libre : la caméra ne bouge plus pendant qu'on consulte la carte
     if (mode === 'inspection') {
       view.paused = on;
@@ -235,9 +250,9 @@ const gameUi = new GameUi({
       const d = view.camera.getWorldDirection(new THREE.Vector3());
       return { x: view.camera.position.x, z: view.camera.position.z, yaw: Math.atan2(d.x, d.z) };
     }
-    const p = mode === 'online' ? online.player : mode === 'solo' ? game.player : null;
+    const p = mode === 'online' ? online.player : mode === 'solo' ? game.player : mode === 'gunfight' ? gfGame.player : null;
     if (!p) return null;
-    const cam = mode === 'online' ? online.cam : game.cam;
+    const cam = mode === 'online' ? online.cam : mode === 'gunfight' ? gfGame.cam : game.cam;
     return { x: p.controller.x, z: p.controller.z, yaw: cam.yaw };
   },
   soloCard() {
@@ -285,7 +300,8 @@ settings.subscribe((s) => {
 
 // ── cycle du jour, inventaire (lampe de poche), sons et vie du décor ──
 const elapsed = () => (mode === 'online' ? online.elapsed : mode === 'solo' ? game.elapsed : 0);
-view.daylightSource = () => (mode === 'online' || mode === 'solo' ? dayState(elapsed()).light : 0);
+// Gunfight : en plein jour (on voit ses adversaires)
+view.daylightSource = () => (mode === 'gunfight' ? 1 : mode === 'online' || mode === 'solo' ? dayState(elapsed()).light : 0);
 view.afterAtmosphere = (dt, daylight) => {
   life.update(dt, daylight, view.renderer.domElement.height);
   ambience.set(daylight, mode !== 'inspection');
@@ -293,6 +309,7 @@ view.afterAtmosphere = (dt, daylight) => {
   ambience.setMusic(mode === 'menu' ? 'menu' : meeting ? 'reunion' : 'jeu');
   if (mode === 'solo') footsteps.update(dt, game.characters.map((c, i) => ({ id: c.id, x: c.controller.x, y: c.controller.y, z: c.controller.z, grounded: c.controller.grounded, local: i === 0 })), view.camera);
   else if (mode === 'online') footsteps.update(dt, online.walkers(), view.camera);
+  else if (mode === 'gunfight') footsteps.update(dt, gfGame.walkers(), view.camera);
 };
 const inv = document.createElement('div');
 inv.className = 'inventory';
@@ -356,7 +373,21 @@ setInterval(() => {
 setInterval(() => net.game && gameUi.render(), 250);
 
 app.addEventListener('click', () => {
-  if ((mode === 'solo' || mode === 'online') && !gameUi.pause.open && net.game?.phase !== 'reunion') input.lock();
+  if ((mode === 'solo' || mode === 'online' || (mode === 'gunfight' && !gfCtl.results.open)) && !gameUi.pause.open && net.game?.phase !== 'reunion') input.lock();
+});
+
+gfCtl = new GunfightController(gfGame, gameUi.toasts, {
+  enter: () => {
+    game.end();
+    setMode('gunfight');
+    gameUi.menu.show(false);
+  },
+  exit: () => setMode('menu'),
+  toMenu: () => {
+    setMode('menu');
+    gameUi.backToMenu();
+  },
+  sight: (a, b) => village.collision.lineClear(a.x, a.y, a.z, b.x, b.y, b.z),
 });
 
 setMode('menu');
@@ -368,6 +399,10 @@ requestAnimationFrame(() => loading.classList.add('done'));
   view,
   village,
   game,
+  gfGame,
+  get gfCtl() {
+    return gfCtl;
+  },
   online,
   net,
   input,
