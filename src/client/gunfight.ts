@@ -109,6 +109,11 @@ export class GunfightGame {
   private bloom = 0;
   private aimTarget = new THREE.Vector3();
   private aimDist = 20;
+  /** accroupi (C) ; à couvert contre un mur ou un obstacle (Q) : normale du mur (vers le joueur), couvert bas */
+  crouch = false;
+  cover: { nx: number; nz: number; low: boolean } | null = null;
+  /** posture effective (accroupi, y compris derrière un couvert bas) */
+  crouched = false;
   /** sprint en cours ; sprint interdit jusqu'à (après un tir) */
   sprinting = false;
   private sprintBlock = 0;
@@ -371,6 +376,56 @@ export class GunfightGame {
     this.dots[i].visible = true;
   }
 
+  /** Distance du premier obstacle dans la direction (dx, dz), à hauteur y (null au-delà de `max`). */
+  private probe(x: number, y: number, z: number, dx: number, dz: number, max: number): number | null {
+    const w = this.village.collision;
+    for (let d = 0.15; d <= max; d += 0.08) if (w.blocksPoint(x + dx * d, y, z + dz * d, 0)) return d;
+    return null;
+  }
+
+  /**
+   * Mise à couvert : le mur ou l'obstacle le plus proche (moins de 1,4 m, en 24 directions) ; couvert bas s'il ne
+   * monte pas jusqu'aux épaules (caisse, muret, charrette) : on s'y accroupit.
+   */
+  private findCover(): { nx: number; nz: number; low: boolean } | null {
+    const c = this.player!.controller;
+    let best: { d: number; a: number } | null = null;
+    for (let i = 0; i < 24; i++) {
+      const a = (i / 24) * Math.PI * 2;
+      const d = this.probe(c.x, c.y + 0.7, c.z, Math.sin(a), Math.cos(a), 1.4);
+      if (d !== null && (!best || d < best.d)) best = { d, a };
+    }
+    if (!best) {
+      this.onFeedback('Aucun mur ni obstacle assez proche pour se mettre à couvert.');
+      return null;
+    }
+    const dx = Math.sin(best.a);
+    const dz = Math.cos(best.a);
+    const hx = c.x + dx * (best.d + 0.05);
+    const hz = c.z + dz * (best.d + 0.05);
+    const low = !this.village.collision.blocksPoint(hx, c.y + 1.45, hz, 0);
+    sfx.step(0.8);
+    return { nx: -dx, nz: -dz, low };
+  }
+
+  /** À couvert : le personnage reste plaqué contre le mur ; au bout du mur, il quitte le couvert. */
+  private holdCover(p: Character, dt: number) {
+    const cv = this.cover!;
+    const c = p.controller;
+    const d = this.probe(c.x, c.y + 0.7, c.z, -cv.nx, -cv.nz, 1.1);
+    if (d === null) {
+      this.cover = null;
+      return;
+    }
+    if (d > 0.42) {
+      const pull = Math.min(d - 0.42, dt * 3);
+      c.x -= cv.nx * pull;
+      c.z -= cv.nz * pull;
+    }
+    // la hauteur du couvert peut changer le long du mur (fin d'une caisse, muret puis mur)
+    cv.low = !this.village.collision.blocksPoint(c.x - cv.nx * (d + 0.05), c.y + 1.45, c.z - cv.nz * (d + 0.05), 0);
+  }
+
   /** Lancer : depuis les yeux, dans l'axe du viseur, un peu vers le haut ; la salle calcule la trajectoire. */
   private throwGrenade(kind: GFGrenade) {
     const c = this.client!;
@@ -611,6 +666,8 @@ export class GunfightGame {
       p.root.rotation.x = 0;
       this.fallMe = 0;
       this.item = me.weapons[0] ?? 'pistolet';
+      this.crouch = false;
+      this.cover = null;
     }
     const alive = !!me?.alive;
     const frozen = !playing || this.paused || !alive || this.kitOpen;
@@ -625,7 +682,7 @@ export class GunfightGame {
     for (let i = 0; i < 3; i++) if (this.input.consume(`Digit${i + 1}`) && !frozen && allowed[i]) this.switchTo(allowed[i]);
     for (let i = 3; i < 6; i++) this.input.consume(`Digit${i + 1}`);
     // grenades : G fragmentation, F aveuglante, C fumigène ; B : équipement
-    for (const [code, kind] of [['KeyG', 'frag'], ['KeyF', 'flash'], ['KeyC', 'fumee']] as [string, GFGrenade][]) if (this.input.consume(code) && !frozen) this.throwGrenade(kind);
+    for (const [code, kind] of [['KeyG', 'frag'], ['KeyF', 'flash'], ['KeyX', 'fumee']] as [string, GFGrenade][]) if (this.input.consume(code) && !frozen) this.throwGrenade(kind);
     if (this.input.consume('KeyB') && playing && !this.paused) this.onLoadout();
     if (!frozen && Math.abs(m.wheel) > 20 && allowed.length > 1) {
       const i = Math.max(0, allowed.indexOf(this.item));
@@ -653,13 +710,39 @@ export class GunfightGame {
       const len = Math.hypot(mv.x, mv.z);
       const ahead = len > 0.1 ? (mv.x * fx + mv.z * fz) / len : 0;
       const firing = this.input.held('Mouse0') || this.input.held('Mouse2');
-      this.sprinting = mv.run && len > 0.1 && ahead > 0.55 && !firing && now >= this.sprintBlock && p.controller.grounded !== false;
+      // s'accroupir (C) ; se coller contre un mur ou un obstacle (Q) ; un saut relève
+      if (!frozen && this.input.consume('KeyC')) this.crouch = !this.crouch;
+      if (!frozen && this.input.consume('KeyQ')) this.cover = this.cover ? null : this.findCover();
+      if (mv.jump && (this.crouch || this.cover)) {
+        mv.jump = false;
+        this.crouch = false;
+        this.cover = null;
+      }
+      this.sprinting = mv.run && len > 0.1 && ahead > 0.55 && !firing && now >= this.sprintBlock && p.controller.grounded !== false && !this.cover;
       if (firing && mv.run) this.sprintBlock = now + 0.25;
+      if (this.sprinting) this.crouch = false;
       mv.run = this.sprinting;
-      mv.scale = this.sprinting ? 1 : (ahead < -0.3 ? 0.78 : ahead < 0.5 ? 0.9 : 1) * (1 - 0.4 * this.ads);
-      p.aimYaw = gun && !this.sprinting ? this.cam.yaw : null;
-      p.animator.sprint = this.sprinting && !!gun;
+      const cv = this.cover;
+      if (cv) {
+        // à couvert : on glisse le long du mur ; s'en éloigner nettement fait quitter le couvert
+        if (len > 0.1 && (mv.x * cv.nx + mv.z * cv.nz) / len > 0.7) this.cover = null;
+        else {
+          const tx = -cv.nz;
+          const tz = cv.nx;
+          const along = mv.x * tx + mv.z * tz;
+          mv.x = tx * along;
+          mv.z = tz * along;
+        }
+      }
+      this.crouched = this.crouch || (!!this.cover?.low && !firing);
+      mv.scale = this.sprinting ? 1 : (ahead < -0.3 ? 0.78 : ahead < 0.5 ? 0.9 : 1) * (1 - 0.4 * this.ads) * (this.crouched ? 0.5 : 1) * (this.cover ? 0.7 : 1);
+      // le corps : face à la course (sprint), dos au mur (à couvert sans viser), sinon face au viseur
+      p.aimYaw = !gun || this.sprinting ? null : this.cover && !firing ? Math.atan2(this.cover.nx, this.cover.nz) : this.cam.yaw;
+      p.animator.sprint = !!gun && (this.sprinting || (!!this.cover && !firing));
+      p.animator.crouching = this.crouched;
+      this.cam.crouch = this.crouched;
       p.update(dt, mv, this.cam.yaw);
+      if (this.cover) this.holdCover(p, dt);
       this.atLimit = this.confine(p) ? 0.6 : Math.max(0, this.atLimit - dt);
       p.root.visible = true;
     } else {
@@ -679,7 +762,7 @@ export class GunfightGame {
     const k = p.controller;
     const moving = Math.min(1, Math.hypot(k.realVx, k.realVz) / 5);
     this.bloom = Math.max(0, this.bloom - dt * 2.5);
-    this.spread = W ? (W.spread + (W.adsSpread - W.spread) * this.ads) * (1 + moving * 0.9 + (k.grounded ? 0 : 1.5)) + this.bloom * W.spread : 0;
+    this.spread = W ? (W.spread + (W.adsSpread - W.spread) * this.ads) * (1 + moving * 0.9 + (k.grounded ? 0 : 1.5)) * (this.crouched ? 0.7 : 1) + this.bloom * W.spread : 0;
     p.animator.gunTorch = this.gear && this.torchOn;
     p.animator.gunLaser = this.gear && this.laserOn;
     p.animator.setItem(alive ? this.item : null);
@@ -746,7 +829,7 @@ export class GunfightGame {
     if (!p || !c) return;
     this.sendAcc = 0;
     const k = p.controller;
-    c.sendPose({ x: k.x, y: k.y, z: k.z, yaw: p.yaw, speed: Math.hypot(k.realVx, k.realVz), grounded: k.grounded, vy: k.vy, dir: 1, torch: this.gear && this.torchOn, laser: this.gear && this.laserOn, pitch: this.cam.pitch, item: this.item });
+    c.sendPose({ x: k.x, y: k.y, z: k.z, yaw: p.yaw, speed: Math.hypot(k.realVx, k.realVz), grounded: k.grounded, vy: k.vy, dir: 1, torch: this.gear && this.torchOn, laser: this.gear && this.laserOn, crouch: this.crouched, pitch: this.cam.pitch, item: this.item });
   }
 
   private reload() {
@@ -915,6 +998,7 @@ export class GunfightGame {
       if (r.grounded && !t.grounded) r.anim.onJump();
       if (!r.grounded && t.grounded) r.anim.onLand(6);
       r.grounded = t.grounded;
+      r.anim.crouching = !!t.crouch;
       r.anim.gunTorch = !!t.torch;
       r.anim.gunLaser = !!t.laser;
       r.anim.setItem(t.item ?? 'pistolet');
@@ -1073,6 +1157,10 @@ export class GunfightGame {
         } else cmd = { x: dx / d, z: dz / d, run: d > 12, jump: ch.controller.blocked && Math.random() < 0.02 };
         if (gun && W && st.ammo[gun] < W.magazine && !st.reloadUntil) c.room.reload(id, gun);
       }
+      // de loin, arme longue : il s'accroupit par moments pour tirer (plus précis, moins exposé)
+      const crouchNow = !!tp && !!gun && ['fusil', 'assaut', 'tactique', 'mitrailleuse', 'precision'].includes(gun) && tp.distanceTo(pos) > 14 && Math.sin(b.strafe * 0.6) > 0.2 && !st.reloadUntil;
+      if (crouchNow) cmd = { ...cmd, scale: 0.4 };
+      ch.animator.crouching = crouchNow;
       // face à sa cible, il se déplace de côté sans lui tourner le dos ; sinon il regarde où il va
       if (look !== null) b.aim = wrap(b.aim + wrap(look - b.aim) * Math.min(1, dt * 8));
       ch.aimYaw = look !== null && gun ? b.aim : null;
@@ -1085,7 +1173,7 @@ export class GunfightGame {
       ch.animator.aimPitch = pitch;
       ch.animator.reloading = this.reloadProgress(id, b.weapon);
       const k = ch.controller;
-      c.room.pose(id, { x: k.x, y: k.y, z: k.z, yaw: ch.yaw, speed: Math.hypot(k.realVx, k.realVz), grounded: k.grounded, vy: k.vy, dir: 1, torch: this.gear, laser: this.gear, pitch, item: b.weapon });
+      c.room.pose(id, { x: k.x, y: k.y, z: k.z, yaw: ch.yaw, speed: Math.hypot(k.realVx, k.realVz), grounded: k.grounded, vy: k.vy, dir: 1, torch: this.gear, laser: this.gear, crouch: ch.animator.crouching, pitch, item: b.weapon });
       if (fire && tp && b.target && gun && W) {
         // visée : poitrine ou tête, avec une erreur selon la difficulté ; plombs dispersés au fusil à pompe
         const eye = new THREE.Vector3(k.x, k.y + 1.5, k.z);

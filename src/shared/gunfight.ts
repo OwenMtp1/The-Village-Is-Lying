@@ -53,12 +53,12 @@ export interface GFLoadout {
   secondary: GFGun | null;
 }
 
-/** Équipement tactique : grenade à fragmentation (G), grenade aveuglante (F), fumigène (C). */
+/** Équipement tactique : grenade à fragmentation (G), grenade aveuglante (F), fumigène (X). */
 export type GFGrenade = 'frag' | 'flash' | 'fumee';
 export const GRENADES = {
   frag: { name: 'Grenade', key: 'G', count: 2, fuse: 2.2, radius: 7, damage: 150 },
   flash: { name: 'Aveuglante', key: 'F', count: 1, fuse: 1.6, radius: 26, blind: 4 },
-  fumee: { name: 'Fumigène', key: 'C', count: 1, fuse: 1.4, radius: 5.5, seconds: 15 },
+  fumee: { name: 'Fumigène', key: 'X', count: 1, fuse: 1.4, radius: 5.5, seconds: 15 },
   /** vitesse de lancer maximale (m/s), gravité, rebonds */
   maxSpeed: 22,
   gravity: 9.8,

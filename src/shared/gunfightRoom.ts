@@ -82,9 +82,12 @@ interface Member {
 type Sight = (a: { x: number; y: number; z: number }, b: { x: number; y: number; z: number }) => boolean;
 const CHEST = 1.3;
 const EYE = 1.5;
+/** accroupi : silhouette et yeux abaissés (fraction de la taille debout) */
+const CROUCH = 0.68;
+const eyeOf = (p: { crouch?: boolean }) => (p.crouch ? EYE * CROUCH : EYE);
 const fullAmmo = () => Object.fromEntries(GUNS.map((g) => [g, WEAPONS[g].magazine])) as Record<GFGun, number>;
 const HEIGHTS = new Map(VARIANTS.map((v) => [v.id, v.heightM]));
-type Past = { x: number; y: number; z: number; t: number };
+type Past = { x: number; y: number; z: number; t: number; crouch?: boolean };
 const hex = (n: number, random: () => number) => Array.from({ length: n }, () => Math.floor(random() * 16).toString(16)).join('');
 
 export class GunfightRoom {
@@ -325,7 +328,7 @@ export class GunfightRoom {
     if (!GRENADE_KINDS.includes(kind)) throw new GFError('Équipement inconnu.');
     if (s.grenades[kind] <= 0) throw new GFError(`Plus de ${GRENADES[kind].name.toLowerCase()}.`);
     const p = this.poses.get(id)!;
-    const eye: Vec3 = [p.x, p.y + EYE, p.z];
+    const eye: Vec3 = [p.x, p.y + eyeOf(p), p.z];
     if (!origin?.every?.(Number.isFinite) || !vel?.every?.(Number.isFinite) || Math.hypot(origin[0] - eye[0], origin[1] - eye[1], origin[2] - eye[2]) > 2) throw new GFError('Lancer invalide.');
     const sp = Math.hypot(vel[0], vel[1], vel[2]);
     const k = sp > GRENADES.maxSpeed ? GRENADES.maxSpeed / sp : 1;
@@ -356,7 +359,7 @@ export class GunfightRoom {
     for (const [vid, vs] of this.state) {
       const q = this.poses.get(vid);
       if (!vs.alive || !q) continue;
-      const eye = { x: q.x, y: q.y + EYE, z: q.z };
+      const eye = { x: q.x, y: q.y + eyeOf(q), z: q.z };
       const d = Math.hypot(eye.x - c.x, eye.y - c.y, eye.z - c.z);
       if (g.kind === 'flash') {
         const R = GRENADES.flash.radius;
@@ -372,7 +375,7 @@ export class GunfightRoom {
       // éclats : le lanceur et les adversaires (pas les coéquipiers), à couvert on est épargné
       if (vid !== g.by && !this.enemy(g.by, vid)) continue;
       if (vs.shieldUntil > t) continue;
-      const chest = { x: q.x, y: q.y + CHEST, z: q.z };
+      const chest = { x: q.x, y: q.y + (q.crouch ? CHEST * CROUCH : CHEST), z: q.z };
       const dd = Math.hypot(chest.x - c.x, chest.y - c.y, chest.z - c.z);
       if (dd > GRENADES.frag.radius || !(this.clear(c, chest) || this.clear(c, eye))) continue;
       const dmg = Math.round(GRENADES.frag.damage * (1 - dd / GRENADES.frag.radius) ** 1.3);
@@ -411,18 +414,18 @@ export class GunfightRoom {
     const item: GFWeapon = (p.item === 'couteau' || isGun(p.item)) && ok.includes(p.item) ? p.item : ok[0];
     if (prev) {
       const h = this.history.get(id) ?? [];
-      h.push({ x: prev.x, y: prev.y, z: prev.z, t: prev.t });
+      h.push({ x: prev.x, y: prev.y, z: prev.z, t: prev.t, crouch: prev.crouch });
       while (h.length && h[0].t < t - GF_RULES.lagMs) h.shift();
       this.history.set(id, h);
     }
     // lampes et lasers : de nuit, et toujours aux Souterrains
     const night = this.settings.night || !!mapOf(this.settings.map).underground;
-    this.poses.set(id, { x: p.x, y: p.y, z: p.z, yaw: p.yaw, speed: Math.min(p.speed, 6), grounded: !!p.grounded, vy: p.vy, dir: p.dir === -1 ? -1 : 1, torch: night && p.torch === true, laser: night && p.laser === true, pitch: Math.max(-1.5, Math.min(1.5, p.pitch ?? 0)), item, t });
+    this.poses.set(id, { x: p.x, y: p.y, z: p.z, yaw: p.yaw, speed: Math.min(p.speed, 6), grounded: !!p.grounded, vy: p.vy, dir: p.dir === -1 ? -1 : 1, torch: night && p.torch === true, laser: night && p.laser === true, crouch: p.crouch === true, pitch: Math.max(-1.5, Math.min(1.5, p.pitch ?? 0)), item, t });
   }
 
   posesView(): Record<string, PlayerPose> {
     const out: Record<string, PlayerPose> = {};
-    for (const [id, p] of this.poses) if (this.state.get(id)?.alive) out[id] = { x: p.x, y: p.y, z: p.z, yaw: p.yaw, speed: p.speed, grounded: p.grounded, vy: p.vy, dir: p.dir, torch: p.torch, laser: p.laser, pitch: p.pitch, item: p.item ?? 'pistolet' };
+    for (const [id, p] of this.poses) if (this.state.get(id)?.alive) out[id] = { x: p.x, y: p.y, z: p.z, yaw: p.yaw, speed: p.speed, grounded: p.grounded, vy: p.vy, dir: p.dir, torch: p.torch, laser: p.laser, crouch: p.crouch, pitch: p.pitch, item: p.item ?? 'pistolet' };
     return out;
   }
 
@@ -460,7 +463,7 @@ export class GunfightRoom {
     if (s.reloadUntil > t && s.reloading === weapon) throw new GFError('Rechargement…');
     if (s.ammo[weapon] <= 0) throw new GFError('Chargeur vide : rechargez (R).');
     if (t < s.nextShotAt) throw new GFError('Trop rapide.');
-    const eye: Vec3 = [p.x, p.y + EYE, p.z];
+    const eye: Vec3 = [p.x, p.y + eyeOf(p), p.z];
     if (!origin || !origin.every(Number.isFinite) || Math.hypot(origin[0] - eye[0], origin[1] - eye[1], origin[2] - eye[2]) > GF_RULES.aimOrigin) throw new GFError('Visée invalide.');
     const rays = (Array.isArray(dirs) ? dirs : []).slice(0, W.pellets).map((d) => (Array.isArray(d) && d.length === 3 ? normalize(d as Vec3) : null));
     if (!rays.length || rays.some((d) => !d)) throw new GFError('Visée invalide.');
@@ -514,7 +517,7 @@ export class GunfightRoom {
       const h = this.bodyHeight(vid);
       let found: { t: number; head: boolean } | null = null;
       for (const pos of [q, ...(this.history.get(vid) ?? []).filter((x) => x.t >= t - GF_RULES.lagMs)]) {
-        const r = rayHitBody(o, d, pos, h);
+        const r = rayHitBody(o, d, pos, pos.crouch ? h * CROUCH : h);
         if (r && (!found || (r.head && !found.head))) found = r;
       }
       if (!found) continue;

@@ -344,6 +344,7 @@ export class GFHud {
       <div class="gf-headshot" aria-hidden="true">Tête !</div>
       <div class="gf-out" role="status">Limite de la carte</div>
       <div class="gf-shield" role="status"></div>
+      <div class="gf-stance" role="status"></div>
       <div class="gf-dmg" aria-hidden="true"></div>
       <div class="gf-health"><span class="gf-hp-n"></span><div class="gf-hp"><i></i></div></div>
       <div class="gf-ammo"></div>
@@ -353,7 +354,7 @@ export class GFHud {
       <div class="gf-nades"></div>
       <div class="gf-kit" role="dialog" aria-label="Équipement" hidden></div>
       <div class="gf-board" hidden></div>
-      <div class="controls-help"><span><kbd>Clic</kbd> tirer / frapper</span><span><kbd>Clic droit</kbd> viser</span><span><kbd>R</kbd> recharger</span><span><kbd>1</kbd> <kbd>2</kbd> <kbd>3</kbd> / molette : armes</span><span><kbd>G</kbd> <kbd>F</kbd> <kbd>C</kbd> grenades</span><span><kbd>B</kbd> équipement</span><span class="gf-night-keys"><kbd>L</kbd> lampe <kbd>O</kbd> laser</span><span><kbd>Tab</kbd> scores</span><span><kbd>Échap</kbd> menu</span></div>
+      <div class="controls-help"><span><kbd>Clic</kbd> tirer / frapper</span><span><kbd>Clic droit</kbd> viser</span><span><kbd>R</kbd> recharger</span><span><kbd>1</kbd> <kbd>2</kbd> <kbd>3</kbd> / molette : armes</span><span><kbd>C</kbd> accroupi</span><span><kbd>Q</kbd> à couvert</span><span><kbd>G</kbd> <kbd>F</kbd> <kbd>X</kbd> grenades</span><span><kbd>B</kbd> équipement</span><span class="gf-night-keys"><kbd>L</kbd> lampe <kbd>O</kbd> laser</span><span><kbd>Tab</kbd> scores</span><span><kbd>Échap</kbd> menu</span></div>
     </div>`);
     this.el.append(this.minimap.el);
     onClick(this.el, '.gf-kit-w', (b) => {
@@ -411,6 +412,13 @@ export class GFHud {
       ${row('Arme principale (1)', PRIMARIES, l?.primary, 'primary')}
       ${row('Arme secondaire (2)', SECONDARIES, l?.secondary, 'secondary')}
       <div class="res-actions"><button type="button" class="primary gf-kit-close">Fermer (B)</button></div></div>`;
+  }
+
+  /** Posture : accroupi, à couvert (bas : on se relève en visant). */
+  stance(text: string | null) {
+    const el = this.el.querySelector('.gf-stance') as HTMLElement;
+    el.classList.toggle('on', !!text);
+    if (text && el.textContent !== text) el.textContent = text;
   }
 
   /** Avertissement : on bute sur la limite de la carte. */

@@ -147,6 +147,8 @@ export class GunfightController {
     const me = p && this.game.alive ? { x: p.controller.x, z: p.controller.z, yaw: this.game.cam.yaw } : null;
     this.hud.minimap.render(this.game.map, me, this.game.miniDots());
     this.hud.outOfMap(this.game.atLimit > 0);
+    const g = this.game;
+    this.hud.stance(!g.alive ? null : g.cover ? (g.cover.low ? 'À couvert (bas) · viser pour se relever · Q pour quitter' : 'À couvert · Q pour quitter') : g.crouch ? 'Accroupi · C pour se relever' : null);
   }
 
   render() {

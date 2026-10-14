@@ -119,6 +119,9 @@ export class CharacterAnimator {
   aimTarget: THREE.Vector3 | null = null;
   /** visée épaulée (clic droit), de 0 à 1 */
   ads = 0;
+  /** accroupi (Gunfight) : bassin abaissé, jambes pliées, avance à petits pas */
+  crouching = false;
+  private crouchS = 0;
   /** sprint : arme abaissée en travers du corps (0 à 1, amorti) */
   sprint = false;
   private sprintS = 0;
@@ -401,6 +404,18 @@ export class CharacterAnimator {
     const leanTarget = THREE.MathUtils.clamp(-s.turnRate * speed * ANIM.turnLean, -0.14, 0.14) * (s.grounded ? 1 : 0.3);
     this.lean += (leanTarget - this.lean) * Math.min(1, dt * 8);
     if (Math.abs(this.lean) > 0.002) pose.Spine1 = { ...pose.Spine1, side: this.lean };
+    // accroupi : cuisses vers l'avant, genoux pliés, buste un peu penché (par-dessus la marche)
+    this.crouchS += ((this.crouching ? 1 : 0) - this.crouchS) * Math.min(1, dt * 10);
+    const ck = this.crouchS * (1 - this.air);
+    if (ck > 0.01) {
+      pose.RightUpLeg = { bend: (pose.RightUpLeg?.bend ?? 0) - 1.15 * ck };
+      pose.LeftUpLeg = { bend: (pose.LeftUpLeg?.bend ?? 0) - 0.95 * ck };
+      pose.RightLeg = { bend: (pose.RightLeg?.bend ?? 0) + 1.75 * ck };
+      pose.LeftLeg = { bend: (pose.LeftLeg?.bend ?? 0) + 1.5 * ck };
+      pose.RightFoot = { bend: -0.55 * ck };
+      pose.LeftFoot = { bend: -0.5 * ck };
+      pose.Spine = { ...pose.Spine, bend: (pose.Spine?.bend ?? 0) + 0.28 * ck };
+    }
     if (Math.abs(this.legYaw) > 0.01) {
       // le bassin (et tout le corps) tourne vers la marche, la colonne revient vers la visée
       pose.Hips = { ...pose.Hips, turn: this.legYaw };
@@ -410,7 +425,7 @@ export class CharacterAnimator {
     applyPose(this.rig, this.root, pose);
 
     // enfoncement du bassin à l'atterrissage (le corps encaisse le choc)
-    this.model.position.y = -ANIM.landDip * crouchW * 0.6;
+    this.model.position.y = -ANIM.landDip * crouchW * 0.6 - 0.42 * ck * (this.base.variant.heightM / 1.75);
     this.cycleT = Math.max(0, this.cycleT - dt / 0.75);
     this.holdGun(dt);
   }

@@ -45,6 +45,8 @@ export interface PlayerPose {
   item?: HeldItem;
   /** Gunfight de nuit : laser de l'arme allumé (les autres en voient le point rouge) */
   laser?: boolean;
+  /** Gunfight : accroupi (silhouette plus basse) */
+  crouch?: boolean;
 }
 
 export type HeldItem = 'couteau' | GFGun | null;

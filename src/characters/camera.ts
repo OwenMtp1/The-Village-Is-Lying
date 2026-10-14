@@ -23,6 +23,9 @@ export class PlayerCamera {
   aiming = false;
   /** vol libre (noclip) : la caméra traverse aussi les murs */
   noCollide = false;
+  /** accroupi : la caméra descend avec le personnage */
+  crouch = false;
+  private crouchS = 0;
   /** suivi serré (Gunfight) : la caméra colle au personnage, sans retard à grande vitesse */
   tight = false;
   /** visée épaulée (clic droit) : champ de vision réduit d'autant (1 = normal), caméra plus proche */
@@ -82,7 +85,8 @@ export class PlayerCamera {
       return;
     }
     const c = ch.root.position;
-    const want = new THREE.Vector3(c.x, c.y + ch.height * CAMERA.aimHeight, c.z);
+    this.crouchS += ((this.crouch ? 1 : 0) - this.crouchS) * Math.min(1, dt * 10);
+    const want = new THREE.Vector3(c.x, c.y + ch.height * (CAMERA.aimHeight - 0.3 * this.crouchS), c.z);
     if (!this.initialized) {
       this.pivot.copy(want);
       this.initialized = true;

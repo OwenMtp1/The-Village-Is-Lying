@@ -115,7 +115,7 @@ Les dégâts baissent avec la distance (sauf au fusil de précision).
 
 **Équipement tactique** (option de la salle) : à chaque apparition, 2 grenades à fragmentation (`G` : jusqu'à 150
 dégâts, 7 m, on est protégé derrière un mur ; sa propre grenade blesse aussi), 1 grenade aveuglante (`F` : écran
-blanc jusqu'à 4 s, bien plus long si on regarde l'éclair) et 1 fumigène (`C` : nuage de 5,5 m pendant 15 s qui bouche
+blanc jusqu'à 4 s, bien plus long si on regarde l'éclair) et 1 fumigène (`X` : nuage de 5,5 m pendant 15 s qui bouche
 la vue, robots compris). La salle calcule la trajectoire (rebonds sur les murs et le sol) et les effets.
 
 **Armes de la partie** (à la création) : *Armes au choix* (on coche celles qui sont permises) ou *Progression* :
@@ -128,6 +128,12 @@ le tableau des scores.
 abaissée, corps tourné vers la course, tir possible 0,15 s après), 2,4 m/s en visée épaulée, un peu plus lent de
 côté et à reculons ; départs et arrêts quasi immédiats ; caméra collée au personnage. Les robots se déplacent
 de la même façon.
+
+**Accroupi et couvert** (comme dans Call of Duty) : `C` pour s'accroupir (vitesse divisée par deux, dispersion
+réduite de 30 %, silhouette et tête plus basses — le serveur en tient compte) ; `Q` pour se coller au mur ou à
+l'obstacle le plus proche (moins de 1,4 m) : on glisse le long, dos au mur, arme abaissée ; derrière un couvert bas
+(caisse, muret, charrette) on s'accroupit tout seul et on se relève en visant ou en tirant ; au bout du mur, en s'en
+éloignant, avec `Q` ou un saut, on quitte le couvert. Les robots s'accroupissent pour tirer de loin.
 
 **Nuit** (au choix à la création ; toujours actif aux Souterrains, même de jour) : la carte est plongée dans la nuit et chaque arme porte une lampe sous le
 canon (`L` pour l'éteindre ou la rallumer) et un laser (`O`). Le fil du laser n'est visible que par celui qui vise ;

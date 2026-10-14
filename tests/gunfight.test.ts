@@ -452,3 +452,24 @@ test('cartes retravaillées : couverts déterministes, loin des apparitions, qui
   assert.equal(spawnSide(map, at(ids[0])), 'rouge');
   assert.equal(spawnSide(map, at(ids[1])), 'bleu');
 });
+
+test('accroupi : silhouette plus basse (un tir à hauteur de tête debout passe au-dessus)', () => {
+  const { room, ids, clock } = setup({ mode: 'ffa' });
+  room.start(ids[0]);
+  const [a, b] = ids;
+  face(room, clock, a, b, 8, 'fusil');
+  clock.advance(GF_RULES.spawnShield);
+  const h = room.bodyHeight(b);
+  const shotAt = (y: number) => room.shoot(a, 'fusil', [0, 1.5, 0], [normalize([0, y - 1.5, 8])!]);
+  // debout : la tête est touchée
+  assert.equal(shotAt(h - 0.13).head, true);
+  clock.advance(1);
+  // accroupi (positions récentes comprises : on attend que l'historique ne contienne que la pose accroupie)
+  room.pose(b, { ...pose(0, 8), crouch: true });
+  clock.advance(1);
+  room.pose(b, { ...pose(0, 8), crouch: true });
+  clock.advance(0.5);
+  assert.equal(shotAt(h - 0.13).hit, false, 'au-dessus de la tête accroupie');
+  clock.advance(0.5);
+  assert.equal(shotAt(h * 0.68 - 0.13).head, true, 'tête accroupie');
+});
