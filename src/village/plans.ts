@@ -435,21 +435,24 @@ function addStair(plan: Plan, fromIdx: number, toIdx: number, start: P2, dir: P2
 }
 
 /** Zones à garder libres autour d'un escalier : pied (niveau bas), arrivée (niveau haut). */
-function stairClearances(s: Stair, levels: Level[]): { level: number; r: Rect }[] {
+function stairClearances(s: Stair, levels: Level[]): { level: number; r: Rect; furnitureOnly?: boolean }[] {
   const run = s.kind === 'ladder' ? 1.0 : stairRun(s.rise);
   void run;
   const R = s.rect;
-  const out: { level: number; r: Rect }[] = [];
+  const out: { level: number; r: Rect; furnitureOnly?: boolean }[] = [];
   const L = 0.9;
   // pied : avant le début de la volée (côté opposé à `dir`)
   const foot =
     s.dir[0] > 0 ? rect(R.x0 - L, R.x0, R.z0, R.z1) : s.dir[0] < 0 ? rect(R.x1, R.x1 + L, R.z0, R.z1) : s.dir[1] > 0 ? rect(R.x0, R.x1, R.z0 - L, R.z0) : rect(R.x0, R.x1, R.z1, R.z1 + L);
   const top =
     s.dir[0] > 0 ? rect(R.x1, R.x1 + L, R.z0, R.z1) : s.dir[0] < 0 ? rect(R.x0 - L, R.x0, R.z0, R.z1) : s.dir[1] > 0 ? rect(R.x0, R.x1, R.z1, R.z1 + L) : rect(R.x0, R.x1, R.z0 - L, R.z0);
-  out.push({ level: s.from, r: R }, { level: s.from, r: foot });
+  // les paliers débordent sur les côtés : on doit pouvoir y tourner pour sortir (le palier d'arrivée est souvent
+  // coincé contre un mur, la sortie se fait alors de côté) ; aucun meuble n'y est posé
+  const wide = (q: Rect): Rect => (s.dir[0] !== 0 ? rect(q.x0, q.x1, q.z0 - 1.0, q.z1 + 1.0) : rect(q.x0 - 1.0, q.x1 + 1.0, q.z0, q.z1));
+  out.push({ level: s.from, r: R }, { level: s.from, r: foot }, { level: s.from, r: wide(foot), furnitureOnly: true });
   const toIdx = levels.findIndex((l) => Math.abs(l.y - (levels[s.from].y + s.rise)) < 0.01);
   if (toIdx >= 0) out.push({ level: toIdx, r: R });
-  if (toIdx >= 0 && s.kind === 'stair') out.push({ level: toIdx, r: top });
+  if (toIdx >= 0 && s.kind === 'stair') out.push({ level: toIdx, r: top }, { level: toIdx, r: wide(top), furnitureOnly: true });
   return out;
 }
 
@@ -545,8 +548,9 @@ function housePlan(b: BuildingSpec, r: () => number): Plan {
     l.rooms.push({ name: i === 0 ? 'Cuisine' : rightType === 'palier' ? 'Palier et rangement' : 'Petite chambre', type: rightType, rect: rect(xs + INT_T / 2, l.inner.x1, l.inner.z0, l.inner.z1), lit: roomLit() });
     const pl = l.inner.z1 - l.inner.z0;
     // porte de cloison : à l'écart des volées et des trémies
-    const doorAt = i === 0 ? (b.cellar ? 1.0 : pl * 0.32) : three && i === 1 ? pl - 0.7 : pl * 0.5;
-    l.partitions.push({ a: [xs, l.inner.z0], b: [xs, l.inner.z1], doors: [{ at: doorAt, w: 0.9, h: 2.0 }], kind: 'wall' });
+    // (3 niveaux : aux étages, la 2e volée longe la cloison côté arrière → porte côté façade)
+    const doorAt = i === 0 ? (b.cellar ? 1.0 : pl * 0.32) : three ? pl - 0.7 : pl * 0.5;
+    l.partitions.push({ a: [xs, l.inner.z0], b: [xs, l.inner.z1], doors: [{ at: doorAt, w: 1.0, h: 2.0 }], kind: 'wall' });
   }
   for (let i = 0; i < stairLevels.length - 1; i++) {
     const from = levels.indexOf(stairLevels[i]);
@@ -562,7 +566,8 @@ function housePlan(b: BuildingSpec, r: () => number): Plan {
     attic.rooms.push({ name: 'Grenier', type: 'grenier', rect: attic.inner, lit: false });
     levels.push(attic);
     const tl = stairLevels[stairLevels.length - 1];
-    const s = addStair(plan, levels.indexOf(tl), levels.length - 1, [xs - INT_T / 2 - 0.4, tl.inner.z0 + 1.15], [0, -1], 0.6, 'ladder');
+    // l'échelle monte vers le centre de la maison : on débouche dans le grenier, pas contre le mur du fond
+    const s = addStair(plan, levels.indexOf(tl), levels.length - 1, [xs - INT_T / 2 - 0.4, tl.inner.z0 + 1.0], [0, 1], 0.6, 'ladder');
     plan.atticHatch = s;
   }
   // cave : escalier le long de la cloison, côté cuisine, qui remonte vers l'arrière
@@ -618,9 +623,9 @@ function tavernPlan(b: BuildingSpec, r: () => number): Plan {
   const backXs = [U.x0, U.x0 + 7.2, U.x1];
   u.rooms.push({ name: 'Palier', type: 'palier', rect: rect(backXs[0], backXs[1] - INT_T / 2, U.z0, cz0 - INT_T / 2), lit: true });
   u.rooms.push({ name: "Chambre de l'aubergiste", type: 'chambre', rect: rect(backXs[1] + INT_T / 2, backXs[2], U.z0, cz0 - INT_T / 2), lit: true });
-  u.partitions.push({ a: [U.x0, cz1], b: [U.x1, cz1], doors: [0, 1, 2].map((k) => ({ at: k * wF + wF / 2, w: 0.85, h: 2.0 })), kind: 'wall' });
+  u.partitions.push({ a: [U.x0, cz1], b: [U.x1, cz1], doors: [0, 1, 2].map((k) => ({ at: k * wF + wF / 2, w: 1.0, h: 2.0 })), kind: 'wall' });
   // le palier s'ouvre sur le couloir ; la chambre de l'aubergiste a sa porte
-  u.partitions.push({ a: [backXs[1], cz0], b: [U.x1, cz0], doors: [{ at: 1.0, w: 0.85, h: 2.0 }], kind: 'wall' });
+  u.partitions.push({ a: [backXs[1], cz0], b: [U.x1, cz0], doors: [{ at: 1.0, w: 1.0, h: 2.0 }], kind: 'wall' });
   u.partitions.push({ a: [backXs[1], U.z0], b: [backXs[1], cz0], doors: [], kind: 'wall' });
   addWindows(plan, b, r);
   plan.lights.push({ x: I.x0 + 0.9, y: 0.6, z: czc, color: '#ff8a3a', intensity: 9, distance: 9, flicker: true });
@@ -650,7 +655,7 @@ function forgePlan(b: BuildingSpec, r: () => number): Plan {
   const us = U.x0 + (U.x1 - U.x0) * 0.55;
   u.rooms.push({ name: 'Salle du forgeron', type: 'salle', rect: rect(U.x0, us - INT_T / 2, U.z0, U.z1), lit: true });
   u.rooms.push({ name: 'Chambre du forgeron', type: 'chambre', rect: rect(us + INT_T / 2, U.x1, U.z0, U.z1), lit: r() < 0.5 });
-  u.partitions.push({ a: [us, U.z0], b: [us, U.z1], doors: [{ at: (U.z1 - U.z0) * 0.5, w: 0.9, h: 2.0 }], kind: 'wall' });
+  u.partitions.push({ a: [us, U.z0], b: [us, U.z1], doors: [{ at: (U.z1 - U.z0) * 0.5, w: 1.0, h: 2.0 }], kind: 'wall' });
   addStair(plan, 0, 1, [I.x1 - STAIR_W / 2 - 0.02, I.z0 + 0.9], [0, 1]);
   addWindows(plan, b, r, {});
   plan.lights.push({ x: hx, y: 1.2, z: I.z0 + 1.0, color: '#ff6a1a', intensity: 14, distance: 12, flicker: true });
@@ -734,8 +739,8 @@ function sheriffPlan(b: BuildingSpec, r: () => number): Plan {
   g.rooms.push({ name: 'Bureau du shérif', type: 'bureau-sherif', rect: rect(I.x0, I.x1, zb + INT_T / 2, I.z1), lit: true });
   g.rooms.push({ name: 'Cellule', type: 'cellule', rect: rect(I.x0, xc - INT_T / 2, I.z0, zb - INT_T / 2), lit: false });
   g.rooms.push({ name: 'Réserve et armurerie', type: 'reserve', rect: rect(xc + INT_T / 2, I.x1, I.z0, zb - INT_T / 2), lit: false });
-  g.partitions.push({ a: [I.x0, zb], b: [xc, zb], doors: [{ at: 1.6, w: 0.85, h: 2.0 }], kind: 'bars' });
-  g.partitions.push({ a: [xc, zb], b: [I.x1, zb], doors: [{ at: 0.8, w: 0.9, h: 2.0 }], kind: 'wall' });
+  g.partitions.push({ a: [I.x0, zb], b: [xc, zb], doors: [{ at: 1.6, w: 1.0, h: 2.0 }], kind: 'bars' });
+  g.partitions.push({ a: [xc, zb], b: [I.x1, zb], doors: [{ at: 0.8, w: 1.0, h: 2.0 }], kind: 'wall' });
   g.partitions.push({ a: [xc, I.z0], b: [xc, zb], doors: [], kind: 'wall' });
   plan.openings.push({ level: 0, side: 'front', at: 0.6, w: 1.2, y0: 0, y1: 2.3, kind: 'door', shutters: true });
   // étage : archives et logement
@@ -743,7 +748,7 @@ function sheriffPlan(b: BuildingSpec, r: () => number): Plan {
   const us = U.x0 + 4.0;
   u.rooms.push({ name: 'Archives', type: 'archives', rect: rect(U.x0, us - INT_T / 2, U.z0, U.z1), lit: r() < 0.6 });
   u.rooms.push({ name: 'Chambre du shérif', type: 'chambre', rect: rect(us + INT_T / 2, U.x1, U.z0, U.z1), lit: true });
-  u.partitions.push({ a: [us, U.z0], b: [us, U.z1], doors: [{ at: (U.z1 - U.z0) * 0.72, w: 0.9, h: 2.0 }], kind: 'wall' });
+  u.partitions.push({ a: [us, U.z0], b: [us, U.z1], doors: [{ at: (U.z1 - U.z0) * 0.72, w: 1.0, h: 2.0 }], kind: 'wall' });
   addStair(plan, 0, 1, [I.x1 - STAIR_W / 2 - 0.02, I.z1 - 0.9], [0, -1]);
   addWindows(plan, b, r);
   // la cellule n'a qu'un soupirail
@@ -797,7 +802,8 @@ function barnPlan(b: BuildingSpec, r: () => number): Plan {
   loft.rooms.push({ name: 'Fenil', type: 'fenil', rect: rect(L.x0, L.x1, L.z0, L.z0 + 5.5), lit: false });
   plan.openings.push({ level: 0, side: 'front', at: 0, w: 3.8, y0: 0, y1: 3.3, kind: 'big-door', shutters: true });
   plan.openings.push({ level: 0, side: 'back', at: I.x0 + 1.6, w: 1.0, y0: 0, y1: 2.1, kind: 'door', shutters: true });
-  addStair(plan, 0, 1, [I.x1 - 0.5, I.z0 + 6.6], [0, -1], 0.6, 'ladder');
+  // l'échelle arrive au ras du plancher du fenil (au-delà, pas de plancher : on tomberait)
+  addStair(plan, 0, 1, [I.x1 - 0.5, I.z0 + 6.5], [0, -1], 0.6, 'ladder');
   plan.openings.push({ level: 1, side: 'front', at: 0, w: 1.4, y0: 0.4, y1: 1.4, kind: 'window', shutters: true });
   void r;
   return plan;

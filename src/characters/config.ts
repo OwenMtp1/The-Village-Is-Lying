@@ -32,7 +32,7 @@ export const MOVE = {
   /** lissage de l'orientation (1/s) */
   turnSmoothing: 14,
   /** rayon du personnage (m) pour les collisions */
-  radius: 0.27,
+  radius: 0.25,
   /** marche franchissable sans sauter (seuils, marches d'escalier) */
   stepUp: 0.36,
   /** descente « collée au sol » sans passer en chute (marches, pentes) */

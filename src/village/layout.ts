@@ -423,6 +423,64 @@ interface Pad {
   b: BuildingSpec;
   y: number;
 }
+export const CEMETERY = { x0: 4, x1: 28, z0: -114, z1: -88, gateX: 16 };
+
+/**
+ * Agrandissement des bâtiments : les plans d'origine laissaient des pièces trop étroites pour circuler entre
+ * les meubles. Chaque bâtiment grandit par petits pas (jusqu'à +40 % en largeur et en profondeur) tant qu'il ne
+ * touche ni un autre bâtiment, ni une rue, ni une place, ni le cimetière. La façade reste sur la rue : la
+ * profondeur gagnée part vers l'arrière. Tous les bâtiments grandissent ensemble, tour après tour (pas de
+ * priorité au premier de la liste). Les plans intérieurs se recalculent à partir des nouvelles dimensions.
+ */
+export const GROWTH = { max: 1.4, step: 0.04, margin: 0.45 };
+function growBuildings(list: BuildingSpec[]) {
+  const fits = (b: BuildingSpec) => {
+    const fp = footprint(b);
+    for (const o of list) if (o !== b && convexOverlap(fp, footprint(o, 0.15))) return false;
+    for (let i = 0; i < 4; i++) {
+      const a = fp[i];
+      const c = fp[(i + 1) % 4];
+      for (let k = 0; k <= 12; k++) {
+        const x = a[0] + ((c[0] - a[0]) * k) / 12;
+        const z = a[1] + ((c[1] - a[1]) * k) / 12;
+        if (roadDistance(x, z).d < GROWTH.margin) return false;
+        if (polygonDistance(x, z, PLAZA) < GROWTH.margin || polygonDistance(x, z, CHURCH_SQUARE) < GROWTH.margin) return false;
+        if (x > CEMETERY.x0 - 0.6 && x < CEMETERY.x1 + 0.6 && z > CEMETERY.z0 - 0.6 && z < CEMETERY.z1 + 0.6) return false;
+      }
+    }
+    return true;
+  };
+  const orig = new Map(list.map((b) => [b, { w: b.w, d: b.d, x: b.x, z: b.z }]));
+  const scale = new Map(list.map((b) => [b, { w: 1, d: 1 }]));
+  const apply = (b: BuildingSpec, sw: number, sd: number) => {
+    const o = orig.get(b)!;
+    b.w = o.w * sw;
+    b.d = o.d * sd;
+    // façade (+z local) fixe : le centre recule de la moitié de la profondeur gagnée
+    const back = -(b.d - o.d) / 2;
+    b.x = o.x + back * Math.sin(b.rot);
+    b.z = o.z + back * Math.cos(b.rot);
+  };
+  for (let changed = true; changed; ) {
+    changed = false;
+    for (const b of list) {
+      if (b.kind === 'church') continue;
+      const s = scale.get(b)!;
+      for (const axis of ['d', 'w'] as const) {
+        if (s[axis] >= GROWTH.max - 1e-9) continue;
+        const next = { ...s, [axis]: Math.min(GROWTH.max, s[axis] + GROWTH.step) };
+        apply(b, next.w, next.d);
+        if (fits(b)) {
+          s[axis] = next[axis];
+          changed = true;
+        } else apply(b, s.w, s.d);
+      }
+    }
+  }
+}
+// les bâtiments déjà en contact au départ (maisons mitoyennes) restent mitoyens : ils ne grandissent pas l'un dans l'autre
+growBuildings(BUILDINGS);
+
 const PADS: Pad[] = BUILDINGS.map((b) => ({ b, y: baseOf(b) }));
 
 /**
@@ -477,7 +535,6 @@ export const GARDENS: Garden[] = BUILDINGS.filter((b) => b.garden).flatMap((b) =
 });
 
 /** Cimetière (clos de murets) à l'est de l'église. */
-export const CEMETERY = { x0: 4, x1: 28, z0: -114, z1: -88, gateX: 16 };
 
 /** Points de vue de l'inspection : position caméra et cible. */
 export interface Viewpoint {

@@ -50,7 +50,7 @@ for (const b of BUILDINGS)
           assert.ok(!overlaps(pr, s.rect, -0.01), `${b.id} : une cloison traverse l'escalier (${l.name})`);
         }
       // dégagements de l'escalier sans cloison
-      for (const c of _test.stairClearances(s, plan.levels))
+      for (const c of _test.stairClearances(s, plan.levels).filter((c) => !c.furnitureOnly))
         for (const p of plan.levels[c.level].partitions) {
           const pr = rect(Math.min(p.a[0], p.b[0]) - 0.07, Math.max(p.a[0], p.b[0]) + 0.07, Math.min(p.a[1], p.b[1]) - 0.07, Math.max(p.a[1], p.b[1]) + 0.07);
           assert.ok(!overlaps(pr, c.r, -0.02), `${b.id} : palier d'escalier coupé par une cloison (${plan.levels[c.level].name})`);
@@ -75,3 +75,18 @@ for (const b of BUILDINGS)
     const n = plan.levels.reduce((s, l) => s + l.items.length, 0);
     assert.ok(n >= 4, `${b.id} : intérieur vide (${n} objets)`);
   });
+
+test('accessibilité : un personnage (rayon 0,25 m) atteint presque toutes les pièces depuis la rue', async () => {
+  const { reachBuilding } = await import('../scripts/reach');
+  let rooms = 0;
+  let ok = 0;
+  const bad: string[] = [];
+  for (const b of BUILDINGS)
+    for (const r of reachBuilding(b.id)) {
+      rooms++;
+      if (r.reach >= 0.6) ok++;
+      else bad.push(`${b.id}/${r.room}`);
+    }
+  // les deux étages du clocher (échelles très raides) sont hors de portée de l'analyse mais praticables en jeu
+  assert.ok(ok / rooms >= 0.97, `${rooms - ok} pièces inaccessibles : ${bad.join(', ')}`);
+});

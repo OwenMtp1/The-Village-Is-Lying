@@ -228,6 +228,13 @@ export class CollisionWorld {
 
 /** Furniture trop bas pour gêner (on marche dessus ou à travers). */
 const FLAT = new Set(['rug', 'pallet', 'bedroll', 'debris']);
+/**
+ * Petits sièges et objets légers : on les écarte en passant (pas de blocage). Sans cela, les tables
+ * entourées de bancs et de chaises fermaient les pièces à un personnage de 0,5 m de large.
+ */
+const PASSABLE = new Set(['chair', 'stool', 'bench', 'bucket', 'candelabra', 'lectern']);
+/** retrait des boîtes de collision du mobilier (m par côté) : on frôle les meubles au lieu de s'y accrocher */
+const FURN_INSET = 0.07;
 
 function slabPieces(R: Rect, holes: Rect[]): Rect[] {
   const zs = new Set<number>([R.z0, R.z1]);
@@ -293,7 +300,18 @@ export function addBuilding(w: CollisionWorld, b: BuildingSpec, plan: Plan = pla
     const thick = l.y > 0.5 || isAttic ? SLAB : 0;
     const areas = l.partialFloor ?? [I];
     for (const a of areas) for (const p of slabPieces(a, l.holes)) surf(p, l.y, thick, `${b.id}:plancher`);
-    if (isAttic) continue;
+    if (isAttic) {
+      // combles : pignons et pans de toit fermés (on ne sort pas du grenier par le bord du plancher)
+      const R = l.outer;
+      const t = l.t;
+      const y0 = l.y - 0.1;
+      const y1 = l.y + 2.4;
+      box(R.x0, R.x1, R.z1 - t, R.z1, y0, y1, `${b.id}:comble`);
+      box(R.x0, R.x1, R.z0, R.z0 + t, y0, y1, `${b.id}:comble`);
+      box(R.x0, R.x0 + t, R.z0, R.z1, y0, y1, `${b.id}:comble`);
+      box(R.x1 - t, R.x1, R.z0, R.z1, y0, y1, `${b.id}:comble`);
+      continue;
+    }
 
     // murs extérieurs, percés des portes (les fenêtres restent des murs)
     const nextY = levels.find((x) => x.y > l.y + 0.01 && tower(x) === tower(l) && x.name !== 'Combles')?.y;
@@ -336,7 +354,7 @@ export function addBuilding(w: CollisionWorld, b: BuildingSpec, plan: Plan = pla
       const ux = (p.b[0] - p.a[0]) / len;
       const uz = (p.b[1] - p.a[1]) / len;
       const ph = p.kind === 'low' ? 1.4 : H;
-      const gaps = p.doors.map((d) => [d.at - d.w / 2 + 0.03, d.at + d.w / 2 - 0.03] as const).sort((q, s) => q[0] - s[0]);
+      const gaps = p.doors.map((d) => [d.at - d.w / 2 + 0.01, d.at + d.w / 2 - 0.01] as const).sort((q, s) => q[0] - s[0]);
       let c = 0;
       const seg = (s0: number, s1: number, ya: number, yb: number) => {
         if (s1 - s0 < 0.01) return;
@@ -357,11 +375,11 @@ export function addBuilding(w: CollisionWorld, b: BuildingSpec, plan: Plan = pla
 
     // mobilier : obstacles, et dessus des meubles bas (on peut y sauter)
     for (const it of l.items) {
-      if (FLAT.has(it.type) || it.y !== undefined) continue;
+      if (FLAT.has(it.type) || PASSABLE.has(it.type) || it.y !== undefined) continue;
       const [fw, fd, fh] = FURN[it.type];
       const [x, z] = P(it.x, it.z);
       const h = it.tilt ? fh * 0.6 : fh;
-      w.addObstacle({ x, z, hx: fw / 2, hz: fd / 2, rot: b.rot + it.rot, y0: fy + l.y - 0.05, y1: fy + l.y + h, tag: `${b.id}:${it.type}` });
+      w.addObstacle({ x, z, hx: Math.max(0.1, fw / 2 - FURN_INSET), hz: Math.max(0.1, fd / 2 - FURN_INSET), rot: b.rot + it.rot, y0: fy + l.y - 0.05, y1: fy + l.y + h, tag: `${b.id}:${it.type}` });
       if (h <= 1.0 && !it.tilt) w.addSurface({ x, z, hx: fw / 2 - 0.05, hz: fd / 2 - 0.05, rot: b.rot + it.rot, y: fy + l.y + h, thick: 0, tag: `${b.id}:${it.type}:dessus` });
     }
   }
