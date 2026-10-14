@@ -22,6 +22,12 @@ export interface GunRig {
   /** recul : recul de l'arme (m) et relèvement du canon (rad) au départ du coup */
   kickBack: number;
   kickUp: number;
+  /** rechargement : où la main gauche engage le chargeur (ou les cartouches) */
+  magazine: THREE.Vector3;
+  /** réarmement après chaque coup : pompe (main gauche) ou culasse (main droite) */
+  cycle: 'pompe' | 'culasse' | null;
+  /** pièces mobiles (pompe, culasse) */
+  moving: THREE.Object3D[];
 }
 
 const mat = {
@@ -35,7 +41,8 @@ const mat = {
 };
 const flashMat = new THREE.MeshBasicMaterial({ color: '#ffd27a', transparent: true, opacity: 0, depthWrite: false, blending: THREE.AdditiveBlending });
 
-type Part = [THREE.BufferGeometry, THREE.Material];
+/** géométrie, matériau, nom éventuel (pièces animées : pompe, culasse) */
+type Part = [THREE.BufferGeometry, THREE.Material, string?];
 const box = (w: number, h: number, d: number, x: number, y: number, z = 0, rz = 0): THREE.BufferGeometry => new THREE.BoxGeometry(w, h, d).rotateZ(rz).translate(x, y, z);
 /** cylindre couché le long de +x, de x0 à x1 */
 const tube = (r: number, x0: number, x1: number, y: number, z = 0, seg = 12): THREE.BufferGeometry =>
@@ -51,7 +58,7 @@ function parts(kind: GunKind): { parts: Part[]; muzzle: THREE.Vector3 } {
   if (kind === 'pistolet') {
     // pistolet semi-automatique : culasse, carcasse, pontet, détente, poignée inclinée, organes de visée, chargeur
     p = [
-      [box(0.19, 0.03, 0.026, 0.065, 0.05), mat.dark], // culasse
+      [box(0.19, 0.03, 0.026, 0.065, 0.05), mat.dark, 'culasse'], // culasse
       [box(0.006, 0.008, 0.006, 0.155, 0.068), mat.black], // guidon
       [box(0.01, 0.008, 0.022, -0.02, 0.068), mat.black], // hausse
       [box(0.012, 0.01, 0.027, 0.03, 0.05, 0.0), mat.steel], // fenêtre d'éjection
@@ -86,7 +93,7 @@ function parts(kind: GunKind): { parts: Part[]; muzzle: THREE.Vector3 } {
       [box(0.2, 0.06, 0.042, 0.06, 0.03), mat.dark], // carcasse
       [tube(0.012, 0.16, 0.68, 0.05), mat.dark], // canon
       [tube(0.011, 0.16, 0.6, 0.02), mat.dark], // magasin
-      [tube(0.022, 0.26, 0.44, 0.022, 0, 10), mat.wood], // pompe
+      [tube(0.022, 0.26, 0.44, 0.022, 0, 10), mat.wood, 'pompe'], // pompe
       [box(0.035, 0.085, 0.03, -0.03, -0.035, 0, -0.35), mat.wood], // poignée
       [box(0.24, 0.055, 0.04, -0.18, 0.0, 0, 0.08), mat.wood], // crosse
       [box(0.03, 0.11, 0.044, -0.3, -0.02), mat.darkWood], // talon
@@ -110,8 +117,8 @@ function parts(kind: GunKind): { parts: Part[]; muzzle: THREE.Vector3 } {
       [tube(0.02, 0.3, 0.302, 0.115), mat.glass],
       [box(0.03, 0.04, 0.02, 0.03, 0.08), mat.black],
       [box(0.03, 0.04, 0.02, 0.19, 0.08), mat.black], // colliers
-      [box(0.012, 0.012, 0.05, 0.02, 0.05, 0.035), mat.steel], // levier
-      [new THREE.SphereGeometry(0.01, 8, 6).translate(0.02, 0.05, 0.06), mat.steel],
+      [box(0.012, 0.012, 0.05, 0.02, 0.05, 0.035), mat.steel, 'culasse'], // levier
+      [new THREE.SphereGeometry(0.01, 8, 6).translate(0.02, 0.05, 0.06), mat.steel, 'culasse'],
       [box(0.14, 0.008, 0.008, 0.48, -0.03, 0.015), mat.black], // bipied replié
       [box(0.14, 0.008, 0.008, 0.48, -0.03, -0.015), mat.black],
     ];
@@ -127,8 +134,9 @@ export function gunRig(kind: GunKind): GunRig {
   const { parts: p, muzzle } = parts(kind);
   const g = new THREE.Group();
   g.name = kind;
-  for (const [geo, m] of p) {
+  for (const [geo, m, name] of p) {
     const mesh = new THREE.Mesh(geo, m);
+    if (name) mesh.name = name;
     mesh.castShadow = true;
     g.add(mesh);
   }
@@ -143,11 +151,14 @@ export function gunRig(kind: GunKind): GunRig {
     group: g,
     muzzle: muzzle.clone(),
     // poignet droit derrière et sous la poignée ; poignet gauche sous la main droite (pistolet) ou sous le garde-main
-    rightWrist: new THREE.Vector3(-0.075, -0.025, 0.012),
-    leftWrist: long ? new THREE.Vector3(kind === 'precision' ? 0.24 : kind === 'pompe' ? 0.28 : 0.24, -0.045, -0.015) : new THREE.Vector3(-0.045, -0.06, -0.035),
+    rightWrist: new THREE.Vector3(-0.07, -0.015, 0.03),
+    leftWrist: long ? new THREE.Vector3(kind === 'precision' ? 0.24 : kind === 'pompe' ? 0.28 : 0.24, -0.045, -0.015) : new THREE.Vector3(-0.065, -0.045, -0.04),
     long,
     kickBack: { pistolet: 0.05, fusil: 0.025, pompe: 0.07, precision: 0.08 }[kind],
     kickUp: { pistolet: 0.22, fusil: 0.07, pompe: 0.2, precision: 0.16 }[kind],
+    magazine: { pistolet: new THREE.Vector3(-0.03, -0.1, 0), fusil: new THREE.Vector3(0.12, -0.12, 0), pompe: new THREE.Vector3(0.08, -0.03, 0.01), precision: new THREE.Vector3(0.07, -0.04, 0) }[kind],
+    cycle: kind === 'pompe' ? 'pompe' : kind === 'precision' ? 'culasse' : null,
+    moving: g.children.filter((o) => o.name === 'pompe' || o.name === 'culasse'),
   };
 }
 

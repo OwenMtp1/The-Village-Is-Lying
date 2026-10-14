@@ -173,8 +173,8 @@ export class OnlineGame {
     if (!this.paused && this.input.consume('KeyV')) this.cam.toggle(p);
     if (!this.alive || !playing) this.item = null;
     // arme sortie : le corps fait face au regard (pistolet : strictement, pour viser)
+    p.aimYaw = this.item === 'pistolet' ? this.cam.yaw : null;
     p.update(dt, readMove(this.input, this.cam, frozen), this.cam.mode === 'subjective' || this.item ? this.cam.yaw : null);
-    if (this.item === 'pistolet') p.yaw = this.cam.yaw;
     p.animator.setItem(this.item ?? (this.torch && this.alive ? 'lampe' : null));
     p.animator.aimPitch = this.cam.pitch;
     this.cam.aiming = this.item === 'pistolet';

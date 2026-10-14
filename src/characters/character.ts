@@ -20,6 +20,11 @@ export class Character {
   private visualY: number;
   /** sens de lecture du cycle (recul en vue subjective) */
   private direction: 1 | -1 = 1;
+  /**
+   * Arme en main : le corps reste tourné vers ce lacet (la visée) et le personnage se déplace dans tous les sens
+   * (de côté, à reculons) ; les jambes suivent la marche. null : le corps se tourne vers la marche.
+   */
+  aimYaw: number | null = null;
 
   constructor(
     readonly id: string,
@@ -62,7 +67,8 @@ export class Character {
     const moving = Math.hypot(vx, vz) > 0.15;
     let target = this.yaw;
     this.direction = 1;
-    if (moving) {
+    if (this.aimYaw !== null) target = this.aimYaw;
+    else if (moving) {
       const mv = Math.atan2(vx, vz);
       target = mv;
       if (lookYaw !== null && Math.abs(wrap(mv - lookYaw)) > 1.95) {
@@ -73,13 +79,14 @@ export class Character {
     const runK = Math.min(1, c.speed / MOVE.runSpeed);
     const maxRate = MOVE.turnRateIdle + (MOVE.turnRateRun - MOVE.turnRateIdle) * runK;
     const delta = wrap(target - this.yaw);
-    const step = THREE.MathUtils.clamp(delta * Math.min(1, MOVE.turnSmoothing * dt), -maxRate * dt, maxRate * dt);
+    const step = this.aimYaw !== null ? delta : THREE.MathUtils.clamp(delta * Math.min(1, MOVE.turnSmoothing * dt), -maxRate * dt, maxRate * dt);
     this.yaw = wrap(this.yaw + step);
     this.turnRate = dt > 0 ? step / dt : 0;
 
     // la cadence suit la vitesse réellement parcourue ; en reculant, seule la composante arrière compte
     const real = Math.hypot(c.realVx, c.realVz);
-    this.animator.update(dt, { speed: real, direction: this.direction, turnRate: this.turnRate, grounded: c.grounded, vy: c.vy });
+    const moveAngle = this.aimYaw !== null ? wrap(Math.atan2(c.realVx, c.realVz) - this.yaw) : undefined;
+    this.animator.update(dt, { speed: real, direction: this.direction, turnRate: this.aimYaw !== null ? 0 : this.turnRate, grounded: c.grounded, vy: c.vy, moveAngle });
 
     // marches d'escalier et seuils : le corps monte en douceur (le contrôleur, lui, est exact)
     if (c.grounded && Math.abs(c.y - this.visualY) < 0.5) this.visualY += (c.y - this.visualY) * Math.min(1, dt * 16);

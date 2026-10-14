@@ -84,7 +84,7 @@ export class VillageMap {
     if (!opts.teleport) this.showUnderground = false;
     (this.el.querySelector('.vmap-under input') as HTMLInputElement).checked = this.showUnderground;
     this.el.querySelector('.vmap-hint')!.textContent = opts.teleport ? 'Cliquez sur un lieu pour vous y rendre · molette : zoom · glisser : déplacer' : 'Molette : zoom · glisser : déplacer · survol : nom du lieu';
-    this.base ??= drawBase();
+    this.base ??= villageBase().canvas;
     requestAnimationFrame(() => {
       this.fit();
       if (this.player) {
@@ -352,6 +352,16 @@ export class VillageMap {
     ctx.fillText(text, 0, 0);
     ctx.restore();
   }
+}
+
+let shared: HTMLCanvasElement | null = null;
+/**
+ * Plan de base partagé (mini-carte du Gunfight) : `HALF` m autour du centre du village, `PX` pixels par mètre ;
+ * x vers la droite, z vers le bas.
+ */
+export function villageBase() {
+  shared ??= drawBase();
+  return { canvas: shared, half: HALF, px: PX, center: VILLAGE_CENTER };
 }
 
 /** Plan de base sur parchemin, dessiné une fois : forêt, champs, rues, places, cimetière, bâtiments, rose des vents. */

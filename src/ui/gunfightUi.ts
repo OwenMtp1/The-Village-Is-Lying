@@ -10,6 +10,8 @@ import { STATIC, OFFLINE_MESSAGE } from '../client/net';
 import { sfx } from '../audio/sfx';
 import { esc, h, onClick } from './dom';
 import { ICON } from './icons';
+import { GFMinimap } from './gfMinimap';
+import { GF_MAPS, mapOf, type GFMapId } from '../shared/gunfightMaps';
 import { profile } from './profile';
 
 const wsvg = (d: string) => `<svg class="ic gf-wic" viewBox="0 0 48 16" aria-hidden="true"><path d="${d}" fill="currentColor"/></svg>`;
@@ -46,6 +48,9 @@ export class GFSettingsForm {
         <button type="button" data-mode="ffa">${GF_MODE_NAMES.ffa}</button>
         <button type="button" data-mode="equipes">${GF_MODE_NAMES.equipes}</button>
       </div>
+      <div class="gf-maps" role="radiogroup" aria-label="Carte">
+        ${GF_MAPS.map((m) => `<button type="button" class="gf-map" data-map="${m.id}" title="${esc(m.desc)}"><b>${esc(m.name)}</b><small>${esc(m.desc)}</small><em>${esc(m.size)} joueurs</em></button>`).join('')}
+      </div>
       ${opts.players === false ? '' : stepper('maxPlayers', 'Joueurs (places)', initial.maxPlayers, L.players[0], L.players[1])}
       ${stepper('scoreLimit', 'Éliminations pour gagner', initial.scoreLimit, L.score[0], L.score[1])}
       ${stepper('minutes', 'Durée maximale', initial.minutes, L.minutes[0], L.minutes[1], ' min')}
@@ -54,6 +59,7 @@ export class GFSettingsForm {
       if (this.locked) return;
       sfx.click();
       if (b.dataset.mode) this.value = { ...this.value, mode: b.dataset.mode as GFMode };
+      if (b.dataset.map) this.value = { ...this.value, map: b.dataset.map as GFMapId };
       if (b.dataset.d) {
         const row = b.closest('.gf-step') as HTMLElement;
         const k = row.dataset.k as 'maxPlayers' | 'scoreLimit' | 'minutes';
@@ -77,6 +83,7 @@ export class GFSettingsForm {
   }
   private render() {
     for (const b of this.el.querySelectorAll<HTMLElement>('[data-mode]')) b.classList.toggle('on', b.dataset.mode === this.value.mode);
+    for (const b of this.el.querySelectorAll<HTMLElement>('[data-map]')) b.classList.toggle('on', b.dataset.map === this.value.map);
     for (const row of this.el.querySelectorAll<HTMLElement>('.gf-step')) {
       const k = row.dataset.k as 'maxPlayers' | 'scoreLimit' | 'minutes';
       row.querySelector('output')!.textContent = `${this.value[k]}${k === 'minutes' ? ' min' : ''}`;
@@ -249,7 +256,7 @@ export class GFLobbyScreen {
     }
     const host = !!L.players.find((p) => p.id === me)?.host;
     this.el.querySelector('.lcode')!.textContent = L.code;
-    this.el.querySelector('.lcount')!.innerHTML = `<b>${L.players.length}</b> / ${L.settings.maxPlayers}<small>${GF_MODE_NAMES[L.settings.mode]}</small>`;
+    this.el.querySelector('.lcount')!.innerHTML = `<b>${L.players.length}</b> / ${L.settings.maxPlayers}<small>${GF_MODE_NAMES[L.settings.mode]} · ${esc(mapOf(L.settings.map).name)}</small>`;
     const row = (p: GFLobbyView['players'][number]) =>
       `<li class="seat${p.id === me ? ' me' : ''}${p.connected ? '' : ' off'}"><span class="avatar">${esc(p.name.slice(0, 1).toUpperCase())}</span><span class="seat-name">${esc(p.name)}${p.id === me ? ' <em>(vous)</em>' : ''}<small>${p.host ? 'hôte' : p.connected ? 'prêt à combattre' : 'déconnecté'}</small></span><span class="seat-state">${p.host ? ICON.couronne : ''}</span></li>`;
     const playersEl = this.el.querySelector('.gf-players') as HTMLElement;
@@ -278,6 +285,8 @@ export class GFLobbyScreen {
 export class GFHud {
   readonly el: HTMLElement;
   private board = false;
+  private feedKey = '';
+  readonly minimap = new GFMinimap();
   private hitTimer = 0;
   private dmgTimer = 0;
   names: (id: string) => string = () => '?';
@@ -289,6 +298,7 @@ export class GFHud {
       <div class="gf-scope" aria-hidden="true"><i></i></div>
       <div class="gf-cross" aria-hidden="true"><span class="l"></span><span class="r"></span><span class="t"></span><span class="b"></span><i></i></div>
       <div class="gf-headshot" aria-hidden="true">Tête !</div>
+      <div class="gf-out" role="status">Limite de la carte</div>
       <div class="gf-dmg" aria-hidden="true"></div>
       <div class="gf-health"><span class="gf-hp-n"></span><div class="gf-hp"><i></i></div></div>
       <div class="gf-ammo"></div>
@@ -297,6 +307,7 @@ export class GFHud {
       <div class="gf-board" hidden></div>
       <div class="controls-help"><span><kbd>Clic</kbd> tirer / frapper</span><span><kbd>Clic droit</kbd> viser</span><span><kbd>R</kbd> recharger</span><span><kbd>1</kbd>…<kbd>5</kbd> / molette : armes</span><span><kbd>Tab</kbd> scores</span><span><kbd>Échap</kbd> menu</span></div>
     </div>`);
+    this.el.append(this.minimap.el);
     window.addEventListener('keydown', (e) => {
       if (e.code === 'Tab' && this.el.classList.contains('open')) {
         this.board = true;
@@ -306,6 +317,11 @@ export class GFHud {
     window.addEventListener('keyup', (e) => {
       if (e.code === 'Tab') this.board = false;
     });
+  }
+
+  /** Avertissement : on bute sur la limite de la carte. */
+  outOfMap(on: boolean) {
+    this.el.querySelector('.gf-out')!.classList.toggle('on', on);
   }
 
   hitMarker(killed: boolean, head = false) {
@@ -350,13 +366,21 @@ export class GFHud {
     }
     const left = Math.max(0, G.endsAt - now) / 1000;
     this.el.querySelector('.gf-time')!.textContent = `${Math.floor(left / 60)}:${String(Math.floor(left % 60)).padStart(2, '0')}`;
-    // fil des éliminations (les plus récentes en haut, 8 s à l'écran)
+    // fil des éliminations : fixe (réécrit seulement quand il change), chaque ligne reste 3 s
     const cls = (id: string) => (teamOf(id) ? `team-${teamOf(id)}` : id === me ? 'me' : '');
-    this.el.querySelector('.gf-feed')!.innerHTML = G.feed
-      .filter((k) => now - k.t < 8000)
-      .reverse()
+    const shown = G.feed.filter((k) => now - k.t < 3000).reverse();
+    const key = shown.map((k) => `${k.t}:${k.killer}:${k.victim}`).join('|');
+    if (key !== this.feedKey) this.feedKey = key;
+    else return this.renderRest(G, me, now, item, spreadPx, scoped);
+    this.el.querySelector('.gf-feed')!.innerHTML = shown
       .map((k) => `<li><b class="${cls(k.killer)}">${esc(name(k.killer))}</b> <span class="gf-w" title="${esc(WEAPON_NAMES[k.weapon] ?? '')}">${WEAPON_ICON[k.weapon] ?? ICON.balle}${k.head ? `<span class="gf-hs" title="Tir à la tête">${ICON.crane}</span>` : ''}</span> <b class="${cls(k.victim)}">${esc(name(k.victim))}</b></li>`)
       .join('');
+    this.renderRest(G, me, now, item, spreadPx, scoped);
+  }
+
+  private renderRest(G: GFGameView, me: string, now: number, item: GFWeapon, spreadPx: number, scoped: boolean) {
+    const st = G.players[me];
+    const name = this.names;
     // vie, munitions
     const hp = st?.hp ?? 0;
     this.el.querySelector('.gf-hp-n')!.textContent = String(hp);

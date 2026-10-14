@@ -34,9 +34,24 @@ const _mb = new THREE.Matrix4();
 const _q1 = new THREE.Quaternion();
 const _q2 = new THREE.Quaternion();
 const AXIS_Z = new THREE.Vector3(0, 0, 1);
-/** orientation des mains par rapport à l'arme (repère des os de main Biped) */
-const HAND_R = new THREE.Quaternion();
-const HAND_L = new THREE.Quaternion().setFromEuler(new THREE.Euler(Math.PI, 0, 0));
+const AXIS_X = new THREE.Vector3(1, 0, 0);
+/**
+ * Orientation d'une main dans le repère de l'arme : les métacarpes (+x de l'os de main Biped) vers l'avant,
+ * inclinés de `down` rad vers le bas, la paume (+y de l'os de main droite, -y de la gauche) tournée vers `palm`.
+ */
+function handQ(down: number, palm: [number, number, number], left: boolean) {
+  const X = new THREE.Vector3(Math.cos(down), Math.sin(down), 0);
+  const N = new THREE.Vector3(...palm).normalize();
+  const Y = (left ? N.negate() : N).addScaledVector(X, -N.dot(X)).normalize();
+  const Z = new THREE.Vector3().crossVectors(X, Y);
+  return new THREE.Quaternion().setFromRotationMatrix(new THREE.Matrix4().makeBasis(X, Y, Z));
+}
+/** main droite sur la poignée, paume contre son flanc droit ; main gauche : sous le garde-main ou par-dessus la droite */
+const HAND_R = handQ(-0.35, [0, 0, -1], false);
+const HAND_L_PISTOL = handQ(-0.55, [0, 0.2, 1], true);
+const HAND_L_LONG = handQ(0.05, [0, 1, 0.6], true);
+/** doigts repliés autour de la poignée (angles par phalange) */
+const CURL = [1.0, 1.05, 0.75];
 
 export interface AnimInput {
   /** vitesse horizontale réelle (m/s) */
@@ -47,6 +62,12 @@ export interface AnimInput {
   turnRate: number;
   grounded: boolean;
   vy: number;
+  /**
+   * Déplacement dans tous les sens (arme en main, le corps suit la visée) : angle de la marche par rapport à
+   * l'avant du corps (rad). Les jambes et le bassin partent dans le sens de la marche (à reculons au-delà de
+   * 100°), le buste se retourne vers la visée.
+   */
+  moveAngle?: number;
 }
 
 let blobGeo: THREE.CircleGeometry | null = null;
@@ -85,6 +106,9 @@ export class CharacterAnimator {
   private guns: Partial<Record<GunKind, GunRig>> = {};
   private hand: THREE.Object3D | null = null;
   private lHand: THREE.Object3D | null = null;
+  /** phalanges (doigt par doigt, de la base au bout ; [0] = pouce) */
+  private rFingers: THREE.Object3D[][] = [];
+  private lFingers: THREE.Object3D[][] = [];
   item: HandItem = null;
   /** coup de couteau, recul du tir : 1 au déclenchement, décroît jusqu'à 0 */
   private strikeT = 0;
@@ -95,6 +119,13 @@ export class CharacterAnimator {
   aimTarget: THREE.Vector3 | null = null;
   /** visée épaulée (clic droit), de 0 à 1 */
   ads = 0;
+  /** rechargement en cours : avancement de 0 à 1 (null : pas de rechargement) */
+  reloading: number | null = null;
+  /** réarmement (pompe, culasse) après un coup */
+  private cycleT = 0;
+  private legYaw = 0;
+  private pivotS: THREE.Vector3 | null = null;
+  private dirS: THREE.Vector3 | null = null;
 
   constructor(readonly base: CharacterBase) {
     this.model = cloneSkinned(base.scene) as THREE.Group;
@@ -122,6 +153,10 @@ export class CharacterAnimator {
       if (o.name === 'R_Hand') this.hand = o;
       if (o.name === 'L_Hand') this.lHand = o;
     });
+    const fingers = (side: string) =>
+      [0, 1, 2, 3, 4].map((f) => [`${side}_Finger${f}`, `${side}_Finger${f}1`, `${side}_Finger${f}2`].map((n) => this.model.getObjectByName(n)).filter((o): o is THREE.Object3D => !!o));
+    this.rFingers = fingers('R');
+    this.lFingers = fingers('L');
     if (this.hand) {
       // la lampe suit la main ; l'échelle du modèle est compensée pour garder sa vraie taille
       this.torch.scale.setScalar(1 / this.scale);
@@ -199,9 +234,10 @@ export class CharacterAnimator {
     this.strikeT = 1;
   }
 
-  /** Tir : recul du bras et éclair du canon. */
+  /** Tir : recul de l'arme, éclair du canon, puis réarmement (pompe, culasse). */
   fire() {
     this.fireT = 1;
+    if (this.gun?.cycle) this.cycleT = 1.35;
   }
 
   /** Position (monde) de la bouche du canon (départ de la balle, éclair). */
@@ -225,6 +261,15 @@ export class CharacterAnimator {
   }
 
   update(dt: number, s: AnimInput) {
+    // marche dans tous les sens : jambes vers la marche (ou à reculons), buste vers la visée
+    let legTarget = 0;
+    if (s.moveAngle !== undefined && s.speed > 0.3) {
+      const a = s.moveAngle;
+      const back = Math.abs(a) > 1.75;
+      s = { ...s, direction: back ? -1 : 1 };
+      legTarget = THREE.MathUtils.clamp(back ? Math.atan2(Math.sin(a + Math.PI), Math.cos(a + Math.PI)) : a, -1.25, 1.25);
+    }
+    this.legYaw += (legTarget - this.legYaw) * Math.min(1, dt * 9);
     // vitesse lissée (évite les à-coups quand le personnage frôle un obstacle)
     this.speedS += (s.speed - this.speedS) * Math.min(1, dt * ANIM.speedSmoothing);
     const speed = this.speedS;
@@ -325,11 +370,18 @@ export class CharacterAnimator {
     const leanTarget = THREE.MathUtils.clamp(-s.turnRate * speed * ANIM.turnLean, -0.14, 0.14) * (s.grounded ? 1 : 0.3);
     this.lean += (leanTarget - this.lean) * Math.min(1, dt * 8);
     if (Math.abs(this.lean) > 0.002) pose.Spine1 = { ...pose.Spine1, side: this.lean };
+    if (Math.abs(this.legYaw) > 0.01) {
+      // le bassin (et tout le corps) tourne vers la marche, la colonne revient vers la visée
+      pose.Hips = { ...pose.Hips, turn: this.legYaw };
+      pose.Spine = { ...pose.Spine, turn: -this.legYaw * 0.55 };
+      pose.Spine1 = { ...pose.Spine1, turn: -this.legYaw * 0.45 };
+    }
     applyPose(this.rig, this.root, pose);
 
     // enfoncement du bassin à l'atterrissage (le corps encaisse le choc)
     this.model.position.y = -ANIM.landDip * crouchW * 0.6;
-    this.holdGun();
+    this.cycleT = Math.max(0, this.cycleT - dt / 0.75);
+    this.holdGun(dt);
   }
 
   /**
@@ -337,10 +389,14 @@ export class CharacterAnimator {
    * le pistolet, crosse à l'épaule pour les armes longues), puis les bras vont la chercher (cinématique inverse) :
    * main droite sur la poignée, main gauche en soutien. Le recul repousse l'arme et relève le canon.
    */
-  private holdGun() {
+  private holdGun(dt: number) {
     const g = this.gun;
     const R = this.rig;
-    if (!g || !this.hand || !this.lHand || !R.RightArm || !R.RightForeArm || !R.LeftArm || !R.LeftForeArm) return;
+    if (!g) {
+      this.pivotS = this.dirS = null;
+      return;
+    }
+    if (!this.hand || !this.lHand || !R.RightArm || !R.RightForeArm || !R.LeftArm || !R.LeftForeArm) return;
     this.root.updateMatrixWorld(true);
     const inv = _m.copy(this.root.matrixWorld).invert();
     const sR = R.RightArm.getWorldPosition(_v1).applyMatrix4(inv);
@@ -348,31 +404,75 @@ export class CharacterAnimator {
     // pivot de la visée : entre les épaules (pistolet), épaule droite (armes longues) ; repère de la racine (+z avant, -x droite)
     const pivot = g.long ? sR.clone().lerp(sL, 0.2) : sR.clone().lerp(sL, 0.5);
     pivot.y += g.long ? -0.04 : 0.02 + 0.06 * this.ads;
+    // amorti : les épaules suivent la foulée, l'arme ne doit pas trembler avec elles
+    if (!this.pivotS) this.pivotS = pivot.clone();
+    else this.pivotS.lerp(pivot, Math.min(1, dt * 10));
     const dir = _v3;
-    if (this.aimTarget) dir.copy(this.aimTarget).applyMatrix4(inv).sub(pivot);
+    if (this.aimTarget) dir.copy(this.aimTarget).applyMatrix4(inv).sub(this.pivotS);
     else dir.set(0, Math.sin(this.aimPitch), Math.cos(this.aimPitch));
     // l'arme reste devant le personnage
     if (dir.z < 0.35 * Math.hypot(dir.x, dir.z)) dir.z = 0.35 * Math.hypot(dir.x, dir.z) + 1e-3;
     dir.normalize();
-    const X = dir.clone();
+    if (!this.dirS) this.dirS = dir.clone();
+    else this.dirS.lerp(dir, Math.min(1, dt * 30)).normalize();
+    const X = this.dirS.clone();
     const Y = new THREE.Vector3(0, 1, 0).addScaledVector(X, -X.y).normalize();
     const Z = new THREE.Vector3().crossVectors(X, Y);
     const kick = this.fireT * this.fireT;
-    const reach = g.long ? 0.26 - 0.03 * this.ads : 0.47;
-    const pos = pivot.clone().addScaledVector(X, reach - g.kickBack * kick).addScaledVector(Y, g.long ? -0.03 : -0.02);
+    // rechargement : l'arme s'abaisse et pivote vers la gauche, la main gauche va chercher un chargeur et revient
+    const r = this.reloading;
+    const lowered = r === null ? 0 : THREE.MathUtils.smoothstep(r, 0, 0.12) * (1 - THREE.MathUtils.smoothstep(r, 0.85, 1));
+    const cyc = this.cycleT > 0 && this.cycleT < 1 ? Math.sin(Math.PI * this.cycleT) : 0;
+    const reach = (g.long ? 0.26 - 0.03 * this.ads : 0.47) - 0.12 * lowered;
+    const pos = this.pivotS.clone().addScaledVector(X, reach - g.kickBack * kick).addScaledVector(Y, (g.long ? -0.03 : -0.02) - 0.1 * lowered);
     if (!g.long) pos.x -= 0.03;
     g.group.position.copy(pos);
-    g.group.quaternion.setFromRotationMatrix(_mb.makeBasis(X, Y, Z)).multiply(_q1.setFromAxisAngle(AXIS_Z, g.kickUp * kick));
+    g.group.quaternion
+      .setFromRotationMatrix(_mb.makeBasis(X, Y, Z))
+      .multiply(_q1.setFromAxisAngle(AXIS_Z, g.kickUp * kick - 0.45 * lowered))
+      .multiply(_q2.setFromAxisAngle(AXIS_X, -0.6 * lowered - (g.cycle === 'culasse' ? 0.25 * cyc : 0)));
+    // pièces mobiles : culasse du pistolet au tir, pompe et levier au réarmement
+    for (const m of g.moving) m.position.x = g.kind === 'pistolet' ? -0.03 * kick : m.name === 'pompe' ? -0.09 * cyc : -0.06 * cyc;
     g.group.updateMatrixWorld(true);
-    const gunQ = g.group.getWorldQuaternion(_q2);
+    const gunQ = g.group.getWorldQuaternion(new THREE.Quaternion());
     const rootQ = this.root.getWorldQuaternion(new THREE.Quaternion());
-    // mains : poignets sur les points de prise, coudes vers le bas et l'extérieur
-    const rw = g.group.localToWorld(g.rightWrist.clone());
+    // main droite : sur la poignée ; elle va actionner la culasse du fusil de précision
+    const rw = g.group.localToWorld(g.rightWrist.clone().add(g.cycle === 'culasse' ? new THREE.Vector3(0.05 * cyc, 0.06 * cyc, 0.05 * cyc) : new THREE.Vector3()));
     solveArm(R.RightArm, R.RightForeArm, this.hand, rw, new THREE.Vector3(-0.7, -1, -0.25).applyQuaternion(rootQ));
     setWorldQuaternion(this.hand, gunQ.clone().multiply(HAND_R));
-    const lw = g.group.localToWorld(g.leftWrist.clone());
+    this.curl(this.rFingers, this.hand, 1);
+    // main gauche : soutien ; tire la pompe ; pendant le rechargement : chargeur → ceinture → chargeur
+    const lLocal = g.leftWrist.clone();
+    if (g.cycle === 'pompe') lLocal.x -= 0.09 * cyc;
+    let lw = g.group.localToWorld(lLocal);
+    if (r !== null && lowered > 0) {
+      const mag = g.group.localToWorld(g.magazine.clone().add(new THREE.Vector3(-0.06, -0.04, -0.03)));
+      const belt = new THREE.Vector3(0.16, 0.95, 0.12).applyMatrix4(this.root.matrixWorld);
+      // va-et-vient : pompe = plusieurs cartouches glissées une à une ; autres = un chargeur retiré puis remis
+      const trips = g.kind === 'pompe' ? 4 : 1;
+      const u = THREE.MathUtils.clamp((r - 0.12) / 0.7, 0, 1);
+      const w = u <= 0 || u >= 1 ? 0 : 0.5 - 0.5 * Math.cos(u * trips * Math.PI * 2);
+      const toMag = THREE.MathUtils.smoothstep(r, 0.04, 0.14) * (1 - THREE.MathUtils.smoothstep(r, 0.84, 0.95));
+      lw = lw.lerp(mag, toMag).lerp(belt, w);
+    }
     solveArm(R.LeftArm, R.LeftForeArm, this.lHand, lw, new THREE.Vector3(0.7, -1, -0.25).applyQuaternion(rootQ));
-    setWorldQuaternion(this.lHand, gunQ.clone().multiply(HAND_L));
+    setWorldQuaternion(this.lHand, gunQ.clone().multiply(g.long ? HAND_L_LONG : HAND_L_PISTOL));
+    this.curl(this.lFingers, this.lHand, 1);
+  }
+
+  /** Referme les doigts (vers la paume) autour de l'arme ; le pouce se replie moins. */
+  private curl(chains: THREE.Object3D[][], hand: THREE.Object3D, sign: 1 | -1) {
+    const axis = new THREE.Vector3(0, 0, 1).applyQuaternion(hand.getWorldQuaternion(new THREE.Quaternion())).multiplyScalar(sign);
+    chains.forEach((chain, f) =>
+      chain.forEach((bone, k) => {
+        if (!bone.parent) return;
+        const q = bone.getWorldQuaternion(new THREE.Quaternion());
+        const qp = bone.parent.getWorldQuaternion(new THREE.Quaternion());
+        q.premultiply(new THREE.Quaternion().setFromAxisAngle(axis, CURL[k] * (f === 0 ? 0.35 : 1)));
+        bone.quaternion.copy(qp.invert().multiply(q));
+        bone.updateMatrixWorld(true);
+      }),
+    );
   }
 
   /** Vitesse de lecture effective des jambes, pour les contrôles (cycles par seconde). */

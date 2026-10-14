@@ -10,7 +10,8 @@
 import { assignAppearances } from '../characters/appearance';
 import { VARIANTS, type Sex } from '../characters/catalog';
 import type { PlayerPose } from './protocol';
-import { GF_RULES, GUNS, SPAWNS, WEAPONS, cleanSettings, isGun, normalize, rayHitBody, type GFGun, type GFShotResult, type GFWeapon, type Vec3, type GFEvent, type GFGameView, type GFKill, type GFLobbyView, type GFPlayerState, type GFSettings, type GFShot, type Team } from './gunfight';
+import { insideMap, mapOf } from './gunfightMaps';
+import { GF_RULES, GUNS, WEAPONS, damageAt, cleanSettings, isGun, normalize, rayHitBody, type GFGun, type GFShotResult, type GFWeapon, type Vec3, type GFEvent, type GFGameView, type GFKill, type GFLobbyView, type GFPlayerState, type GFSettings, type GFShot, type Team } from './gunfight';
 
 export interface GFOutput {
   lobby(v: GFLobbyView): void;
@@ -178,7 +179,7 @@ export class GunfightRoom {
     this.startedAt = t;
     this.endsAt = t + this.settings.minutes * 60_000;
     for (const pid of ids) {
-      this.state.set(pid, { hp: GF_RULES.health, alive: true, kills: 0, deaths: 0, headshots: 0, ammo: fullAmmo(), reloadUntil: 0, reloading: null, respawnAt: 0, spawn: { x: 0, z: 0, yaw: 0, n: 0 }, shieldUntil: 0, nextShotAt: 0, nextStabAt: 0 });
+      this.state.set(pid, { hp: GF_RULES.health, alive: true, kills: 0, deaths: 0, headshots: 0, ammo: fullAmmo(), reloadUntil: 0, reloading: null, respawnAt: 0, spawn: { x: 0, y: null, z: 0, yaw: 0, n: 0 }, shieldUntil: 0, nextShotAt: 0, nextStabAt: 0 });
       this.respawn(pid);
     }
     this.publish();
@@ -193,11 +194,15 @@ export class GunfightRoom {
       .filter(([pid, o]) => pid !== id && o.alive && (this.settings.mode === 'ffa' || this.players.get(pid)?.team !== team))
       .map(([pid]) => this.poses.get(pid))
       .filter((p): p is PlayerPose & { t: number } => !!p);
-    const scored = SPAWNS.map(([x, z]) => ({ x, z, d: enemies.length ? Math.min(...enemies.map((e) => Math.hypot(e.x - x, e.z - z))) : this.random() * 100 }))
+    const scored = mapOf(this.settings.map).spawns.map(({ x, y, z }) => ({ x, y: y ?? null, z, d: enemies.length ? Math.min(...enemies.map((e) => Math.hypot(e.x - x, e.z - z))) : this.random() * 100 }))
       .sort((a, b) => b.d - a.d)
       .slice(0, 4);
-    const p = scored[Math.floor(this.random() * scored.length)] ?? { x: 0, z: 0 };
-    const yaw = Math.atan2(5 - p.x, -10 - p.z);
+    const p = scored[Math.floor(this.random() * scored.length)] ?? { x: 0, y: null, z: 0 };
+    // regard tourné vers le cœur de la carte
+    const sp = mapOf(this.settings.map).spawns;
+    const cx = sp.reduce((a, q) => a + q.x, 0) / sp.length;
+    const cz = sp.reduce((a, q) => a + q.z, 0) / sp.length;
+    const yaw = Math.atan2(cx - p.x, cz - p.z);
     const t = this.now();
     s.alive = true;
     s.hp = GF_RULES.health;
@@ -206,8 +211,8 @@ export class GunfightRoom {
     s.reloading = null;
     s.respawnAt = 0;
     s.shieldUntil = t + GF_RULES.spawnShield * 1000;
-    s.spawn = { x: p.x, z: p.z, yaw, n: s.spawn.n + 1 };
-    this.poses.set(id, { x: p.x, y: 0, z: p.z, yaw, speed: 0, grounded: true, vy: 0, dir: 1, torch: false, pitch: 0, item: 'pistolet', t });
+    s.spawn = { x: p.x, y: p.y, z: p.z, yaw, n: s.spawn.n + 1 };
+    this.poses.set(id, { x: p.x, y: p.y ?? 0, z: p.z, yaw, speed: 0, grounded: true, vy: 0, dir: 1, torch: false, pitch: 0, item: 'pistolet', t });
     this.history.set(id, []);
   }
 
@@ -230,6 +235,8 @@ export class GunfightRoom {
     const s = this.state.get(id);
     if (!s?.alive) return;
     if (![p.x, p.y, p.z, p.yaw, p.speed, p.vy, p.pitch ?? 0].every(Number.isFinite)) return;
+    // hors de la carte choisie : position refusée
+    if (!insideMap(mapOf(this.settings.map), p.x, p.y, p.z, 3)) return;
     const prev = this.poses.get(id);
     const t = this.now();
     if (prev) {
@@ -301,7 +308,7 @@ export class GunfightRoom {
       if (hit) {
         to.push(hit.at);
         const cur = dmg.get(hit.id) ?? { d: 0, head: false };
-        cur.d += W.damage * (hit.head ? W.head : 1);
+        cur.d += damageAt(W, Math.hypot(hit.at[0] - eye[0], hit.at[1] - eye[1], hit.at[2] - eye[2]), hit.head);
         cur.head ||= hit.head;
         dmg.set(hit.id, cur);
       } else

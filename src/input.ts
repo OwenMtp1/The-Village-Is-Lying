@@ -30,8 +30,12 @@ export class Input {
       this.dragging = false;
       this.down.delete(`Mouse${e.button}`);
     });
-    // Chromium envoie un seul pointerdown pour plusieurs boutons à la fois : on suit aussi mousedown/mouseup
-    window.addEventListener('mousedown', (e) => this.locked && this.down.add(`Mouse${e.button}`));
+    // un 2e bouton enfoncé pendant le 1er (tirer en visant) ne produit pas de pointerdown : on suit aussi mousedown
+    window.addEventListener('mousedown', (e) => {
+      if (!this.locked) return;
+      this.down.add(`Mouse${e.button}`);
+      if (e.button === 0) this.pressed.add('Mouse0');
+    });
     window.addEventListener('mouseup', (e) => this.down.delete(`Mouse${e.button}`));
     target.addEventListener('contextmenu', (e) => e.preventDefault());
     document.addEventListener('pointerlockchange', () => {

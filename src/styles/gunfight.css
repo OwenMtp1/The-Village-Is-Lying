@@ -25,8 +25,8 @@
 .gf-score b { font-size: 22px; }
 .gf-score small { color: var(--muted); font: italic 13px var(--body); }
 .gf-time { font: 700 16px var(--mono); color: var(--ink); text-shadow: 0 1px 4px #000; }
-.gf-feed { position: absolute; top: 14px; right: 16px; list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; align-items: flex-end; }
-.gf-feed li { background: rgba(0, 0, 0, 0.55); padding: 4px 10px; border-radius: 3px; font-size: 14px; display: flex; align-items: center; gap: 8px; animation: toast-in 0.25s var(--ease) both; }
+.gf-feed { position: absolute; top: 14px; left: 16px; list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; align-items: flex-start; }
+.gf-feed li { background: rgba(0, 0, 0, 0.55); padding: 4px 10px; border-radius: 3px; font-size: 14px; display: flex; align-items: center; gap: 8px; }
 .gf-feed b.me { color: var(--gold-2); }
 .gf-w .ic { color: var(--ink-2); }
 .gf-cross { --gap: 8px; position: absolute; left: 50%; top: 50%; width: 0; height: 0; transition: transform 0.08s; }
@@ -91,3 +91,19 @@ tr.me td { color: var(--gold-2); }
 .gf-pause .gf-teams { grid-template-columns: 1fr; }
 .mode-gunfight .toasts { top: 70px; bottom: auto; }
 @media (max-width: 760px) { .gf-teams { grid-template-columns: 1fr; } .gf-hp { width: 110px; } }
+
+/* mini-carte (en bas à gauche, au-dessus de la vie) */
+.gf-mini { position: absolute; left: 18px; bottom: 74px; width: 190px; height: 190px; border-radius: 50%; border: 3px solid rgba(20, 14, 8, 0.85); box-shadow: 0 4px 18px rgba(0, 0, 0, 0.5), inset 0 0 0 1px rgba(255, 220, 160, 0.25); overflow: hidden; }
+.gf-mini canvas { width: 100%; height: 100%; display: block; }
+.gf-out { position: absolute; left: 50%; top: 28%; transform: translateX(-50%); padding: 8px 16px; background: rgba(120, 20, 10, 0.75); border: 1px solid #ff8a6a; border-radius: var(--radius); font: 700 15px var(--display); letter-spacing: 0.08em; opacity: 0; transition: opacity 0.25s; pointer-events: none; }
+.gf-out.on { opacity: 1; }
+@media (max-width: 760px) { .gf-mini { width: 130px; height: 130px; } }
+
+/* choix de la carte */
+.gf-maps { display: grid; grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); gap: 8px; margin: 10px 0; }
+.gf-map { display: flex; flex-direction: column; align-items: flex-start; gap: 3px; text-align: left; padding: 9px 11px; background: rgba(255, 255, 255, 0.04); border: 1px solid var(--line); border-radius: var(--radius); color: inherit; cursor: pointer; }
+.gf-map b { font: 700 14px var(--display); }
+.gf-map small { font-size: 12px; color: var(--muted); line-height: 1.3; }
+.gf-map em { font-size: 11px; font-style: normal; color: var(--gold); }
+.gf-map:hover { border-color: var(--line-2); }
+.gf-map.on { border-color: var(--gold); background: rgba(212, 170, 90, 0.14); box-shadow: inset 0 0 0 1px var(--gold); }

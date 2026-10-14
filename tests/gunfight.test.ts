@@ -2,8 +2,9 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { GunfightRoom, type GFOutput } from '../src/shared/gunfightRoom';
-import { GF_RULES, WEAPONS, cleanSettings, normalize, rayHitBody, type GFGun, type GFShot } from '../src/shared/gunfight';
+import { GF_RULES, WEAPONS, cleanSettings, damageAt, normalize, rayHitBody, type GFGun, type GFShot } from '../src/shared/gunfight';
 import type { PlayerPose } from '../src/shared/protocol';
+import { GF_MAPS, insideMap, mapOf } from '../src/shared/gunfightMaps';
 
 class Out implements GFOutput {
   lobbies = 0;
@@ -50,7 +51,7 @@ function fire(room: GunfightRoom, a: string, b: string | null, weapon: GFGun = '
 }
 
 test('réglages bornés ; au moins 2 joueurs ; on ne rejoint pas une partie commencée', () => {
-  assert.deepEqual(cleanSettings({ maxPlayers: 99, scoreLimit: 1, minutes: 0, mode: 'x' as never }), { mode: 'ffa', maxPlayers: 16, scoreLimit: 5, minutes: 2 });
+  assert.deepEqual(cleanSettings({ maxPlayers: 99, scoreLimit: 1, minutes: 0, mode: 'x' as never }), { mode: 'ffa', map: 'village', maxPlayers: 16, scoreLimit: 5, minutes: 2 });
   const { room, ids } = setup({ maxPlayers: 4 }, 1);
   assert.throws(() => room.start(ids[0]), /au moins 2/);
   room.join('B', 'F');
@@ -58,7 +59,7 @@ test('réglages bornés ; au moins 2 joueurs ; on ne rejoint pas une partie comm
   assert.throws(() => room.join('C', 'M'), /déjà commencé/);
 });
 
-test('chacun pour soi : trois balles au corps pour éliminer, cadence, chargeur, rechargement, réapparition', () => {
+test('chacun pour soi : quatre balles au corps pour éliminer, cadence, chargeur, rechargement, réapparition', () => {
   const { room, out, ids, clock } = setup({ mode: 'ffa', scoreLimit: 5 });
   room.start(ids[0]);
   const [a, b] = ids;
@@ -67,15 +68,17 @@ test('chacun pour soi : trois balles au corps pour éliminer, cadence, chargeur,
   assert.deepEqual(fire(room, a, b), { hit: true, killed: false, head: false });
   assert.equal(room.stateOf(b)!.hp, GF_RULES.health - WEAPONS.pistolet.damage);
   assert.throws(() => fire(room, a, b), /Trop rapide/);
-  clock.advance(0.4);
-  fire(room, a, b);
+  for (let i = 0; i < 2; i++) {
+    clock.advance(0.4);
+    fire(room, a, b);
+  }
   clock.advance(0.4);
   assert.deepEqual(fire(room, a, b), { hit: true, killed: true, head: false });
   assert.equal(room.stateOf(b)!.alive, false);
   assert.equal(room.stateOf(a)!.kills, 1);
-  assert.equal(room.stateOf(a)!.ammo.pistolet, WEAPONS.pistolet.magazine - 3);
+  assert.equal(room.stateOf(a)!.ammo.pistolet, WEAPONS.pistolet.magazine - 4);
   assert.equal(room.stateOf(a)!.ammo.fusil, WEAPONS.fusil.magazine, 'chaque arme a son chargeur');
-  assert.equal(out.shots.length, 3);
+  assert.equal(out.shots.length, 4);
   assert.throws(() => fire(room, b, a), /à terre/);
   // réapparition
   clock.advance(GF_RULES.respawnSeconds + 0.1);
@@ -84,7 +87,7 @@ test('chacun pour soi : trois balles au corps pour éliminer, cadence, chargeur,
   assert.equal(room.stateOf(b)!.hp, GF_RULES.health);
   assert.equal(room.stateOf(b)!.spawn.n, 2);
   // chargeur vidé puis rechargé
-  for (let i = 0; i < WEAPONS.pistolet.magazine - 3; i++) {
+  for (let i = 0; i < WEAPONS.pistolet.magazine - 4; i++) {
     clock.advance(0.4);
     fire(room, a, null);
   }
@@ -229,7 +232,7 @@ test('équipes : choix d’équipe, pas de tir allié, score d’équipe, victoi
     room.pose(a, pose(0, 0, 0));
     room.pose(c, pose(0, 5, 0));
     clock.advance(2);
-    for (let i = 0; i < 3; i++) {
+    for (let i = 0; i < 4; i++) {
       clock.advance(0.4);
       if (room.stateOf(a)!.ammo.pistolet === 0) {
         room.reload(a);
@@ -258,4 +261,33 @@ test('fin à l’heure : le meilleur score gagne, égalité possible', () => {
   const r = room.gameView().result!;
   assert.equal(r.winner, null);
   assert.match(r.reason, /égalité/);
+});
+
+test('dégâts selon la distance : pleins de près, réduits au loin ; le fusil à pompe ne vaut rien à 20 m', () => {
+  const P = WEAPONS.pompe;
+  assert.ok(damageAt(P, 3, false) * P.pellets >= GF_RULES.health, 'une cartouche à bout portant');
+  assert.ok(damageAt(P, 20, false) * P.pellets < 45);
+  assert.equal(damageAt(WEAPONS.pistolet, 10, false), WEAPONS.pistolet.damage);
+  assert.ok(damageAt(WEAPONS.pistolet, 50, false) < WEAPONS.pistolet.damage * 0.7);
+  assert.ok(damageAt(WEAPONS.precision, 200, true) >= GF_RULES.health, 'tête au fusil de précision : mort à toute distance');
+  assert.ok(damageAt(WEAPONS.precision, 30, false) < GF_RULES.health, 'au corps : il en faut deux');
+});
+
+test('cartes : points d’apparition dans la carte, réapparition sur la carte choisie, positions hors carte refusées', () => {
+  for (const m of GF_MAPS) {
+    assert.ok(m.spawns.length >= 8, `${m.id} : ${m.spawns.length} points d'apparition`);
+    for (const p of m.spawns) assert.ok(insideMap(m, p.x, p.y ?? 0, p.z), `${m.id} : (${p.x}, ${p.z}) hors carte`);
+  }
+  for (const map of ['place', 'souterrains'] as const) {
+    const { room, ids, clock } = setup({ mode: 'ffa', map });
+    room.start(ids[0]);
+    const s = room.stateOf(ids[0])!.spawn;
+    assert.ok(insideMap(mapOf(map), s.x, s.y ?? 0, s.z), `${map} : apparition (${s.x}, ${s.z})`);
+    if (map === 'souterrains') assert.ok((s.y ?? 0) < -5, 'sous terre');
+    // un pas hors de la carte : refusé (la position reste la dernière valable)
+    const before = room.posesView()[ids[0]];
+    clock.advance(30);
+    room.pose(ids[0], pose(200, 200));
+    assert.deepEqual([room.posesView()[ids[0]].x, room.posesView()[ids[0]].z], [before.x, before.z]);
+  }
 });

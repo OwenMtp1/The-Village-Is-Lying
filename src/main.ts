@@ -86,7 +86,10 @@ const setBodyMode = () => {
 };
 const soloUpdate = (dt: number) => game.update(dt);
 const onlineUpdate = (dt: number) => online.update(dt);
-const gunfightUpdate = (dt: number) => gfGame.update(dt);
+const gunfightUpdate = (dt: number) => {
+  gfGame.update(dt);
+  gfCtl.frame();
+};
 const cinematicUpdate = (dt: number) => cinematic.update(dt);
 let inspectRoof: RoofMode = 'auto';
 

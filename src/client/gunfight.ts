@@ -16,9 +16,11 @@ import type { MoveInput } from '../characters/controller';
 import type { Input } from '../input';
 import type { Village } from '../village/village';
 import type { PlayerPose } from '../shared/protocol';
-import { GF_RULES, SLOTS, SPAWNS, WEAPONS, isGun, type GFGun, type GFShot, type GFShotResult, type GFWeapon, type Team, type Vec3 } from '../shared/gunfight';
+import { GF_RULES, SLOTS, WEAPONS, isGun, type GFGun, type GFShot, type GFShotResult, type GFWeapon, type Team, type Vec3 } from '../shared/gunfight';
 import { sfx } from '../audio/sfx';
 import { LocalGF, type GFClient } from './gfNet';
+import { insideMap, mapOf, type GFMap } from '../shared/gunfightMaps';
+import type { MiniDot } from '../ui/gfMinimap';
 
 const wrap = (a: number) => Math.atan2(Math.sin(a), Math.cos(a));
 const TEAM_COLOR: Record<Team, string> = { rouge: '#e0574a', bleu: '#5a9be6' };
@@ -36,6 +38,8 @@ interface Remote {
 interface Bot {
   ch: Character;
   weapon: GFGun;
+  /** lacet de la visée (amorti) */
+  aim: number;
   tag: THREE.Sprite;
   spawnN: number;
   target: string | null;
@@ -86,6 +90,15 @@ export class GunfightGame {
   private nextFire = 0;
   private bloom = 0;
   private aimTarget = new THREE.Vector3();
+  private aimDist = 20;
+  /** recul encore à rattraper (rad) : il revient en partie de lui-même */
+  private recoilDebt = 0;
+  /** dernier tir de chaque joueur (s, horloge locale) : points rouges sur la mini-carte */
+  private lastShot = new Map<string, number>();
+  /** dernière position valable dans la carte (limite invisible) */
+  private lastGood = new WeakMap<Character, { x: number; y: number; z: number }>();
+  /** on bute contre la limite de la carte */
+  atLimit = 0;
   paused = false;
   client: GFClient | null = null;
   /** retour visuel (marqueur de touche, élimination, dégâts) pour l'interface */
@@ -106,6 +119,10 @@ export class GunfightGame {
     this.dispose();
     this.client = client;
     client.onShot = (s) => this.onShot(s);
+  }
+
+  get map(): GFMap {
+    return mapOf(this.client?.game?.settings.map);
   }
 
   get alive() {
@@ -140,13 +157,14 @@ export class GunfightGame {
       const world = this.village.collision;
       const local = c instanceof LocalGF ? c : null;
       ids.forEach((id, i) => {
-        const sp = g.players[id]?.spawn ?? { x: 0, z: 0, yaw: 0, n: 0 };
+        const sp = g.players[id]?.spawn ?? { x: 0, y: null, z: 0, yaw: 0, n: 0 };
         if (id === c.me) {
           this.player = new Character(id, bases[i], world, sp.x, sp.z, sp.yaw);
           this.scene.add(this.player.root);
           this.cam.yaw = sp.yaw;
           this.cam.pitch = -0.1;
-          this.spawnN = sp.n;
+          // placement exact (souterrains, obstacles) à la première image
+          this.spawnN = sp.n - 1;
           if (this.cam.mode === 'subjective') this.player.animator.setFirstPerson(true);
         } else if (local?.bots.includes(id)) {
           const ch = new Character(id, bases[i], world, sp.x, sp.z, sp.yaw);
@@ -154,10 +172,10 @@ export class GunfightGame {
           ch.root.add(tag);
           tag.position.y = ch.height + 0.35;
           this.scene.add(ch.root);
-          this.bots.set(id, { ch, weapon: botWeapon(), tag, spawnN: sp.n, target: null, waypoint: SPAWNS[Math.floor(Math.random() * SPAWNS.length)], stuck: 0, nextShot: 0, strafe: Math.random() * 6, fall: 0, thinkAt: 0 });
+          this.bots.set(id, { ch, weapon: botWeapon(), aim: sp.yaw, tag, spawnN: sp.n - 1, target: null, waypoint: this.randomSpawn(), stuck: 0, nextShot: 0, strafe: Math.random() * 6, fall: 0, thinkAt: 0 });
         } else {
           const anim = new CharacterAnimator(bases[i]);
-          const y = world.groundAt(sp.x, sp.z, 1e6);
+          const y = world.groundAt(sp.x, sp.z, sp.y !== null && sp.y !== undefined ? sp.y + 1 : 1e6);
           anim.root.position.set(sp.x, y, sp.z);
           const tag = nameTag(c.nameOf(id), this.tagColor(id));
           anim.root.add(tag);
@@ -197,15 +215,86 @@ export class GunfightGame {
     return out;
   }
 
-  private placeAt(ch: Character, x: number, z: number) {
+  private randomSpawn(): [number, number] {
+    const sp = this.map.spawns;
+    const p = sp[Math.floor(Math.random() * sp.length)];
+    return [p.x, p.z];
+  }
+
+  /**
+   * Place un personnage au point d'apparition (au sol des souterrains si besoin) ; si un meuble, un tronc ou un
+   * mur occupe le point, on cherche la place libre la plus proche (en spirale).
+   */
+  private placeAt(ch: Character, x: number, z: number, y: number | null = null) {
     const w = this.village.collision;
     const c = ch.controller;
-    c.x = x;
-    c.z = z;
-    c.y = w.groundAt(x, z, w.groundAt(x, z, 1e6) + 0.1);
-    if (!Number.isFinite(c.y)) c.y = 0;
+    const top = (px: number, pz: number) => w.groundAt(px, pz, y !== null ? y + 1 : w.groundAt(px, pz, 1e6) + 0.1);
+    let best: [number, number] = [x, z];
+    search: for (let r = 0; r <= 4; r += 0.5)
+      for (let a = 0; a < Math.PI * 2; a += r ? 0.5 / r : 7) {
+        const px = x + Math.cos(a) * r;
+        const pz = z + Math.sin(a) * r;
+        const gy = top(px, pz);
+        if (!Number.isFinite(gy)) continue;
+        if (!w.blocksPoint(px, gy + 0.6, pz, 0.32) && !w.blocksPoint(px, gy + 1.4, pz, 0.32)) {
+          best = [px, pz];
+          break search;
+        }
+      }
+    c.x = best[0];
+    c.z = best[1];
+    c.y = top(c.x, c.z);
+    if (!Number.isFinite(c.y)) c.y = y ?? 0;
     c.vx = c.vz = c.vy = 0;
     c.grounded = true;
+    this.lastGood.set(ch, { x: c.x, y: c.y, z: c.z });
+  }
+
+  /** Limite invisible de la carte : le personnage qui la franchit revient à sa dernière position valable. */
+  private confine(ch: Character): boolean {
+    const c = ch.controller;
+    if (insideMap(this.map, c.x, c.y, c.z)) {
+      this.lastGood.set(ch, { x: c.x, y: c.y, z: c.z });
+      return false;
+    }
+    const g = this.lastGood.get(ch);
+    if (g) {
+      c.x = g.x;
+      c.y = g.y;
+      c.z = g.z;
+      c.vx = c.vz = 0;
+      if (c.vy > 0) c.vy = 0;
+    }
+    return true;
+  }
+
+  /** Avancement du rechargement d'un joueur (0 à 1) si l'arme qu'il tient est en cours de rechargement. */
+  private reloadProgress(id: string, item: string | null | undefined): number | null {
+    const st = this.client?.game?.players[id];
+    if (!st?.reloadUntil || !st.reloading || st.reloading !== item) return null;
+    const left = (st.reloadUntil - this.client!.serverNow()) / 1000;
+    const total = WEAPONS[st.reloading].reload;
+    return left > 0 ? THREE.MathUtils.clamp(1 - left / total, 0, 1) : null;
+  }
+
+  /** Points de la mini-carte : coéquipiers (toujours), adversaires quelques secondes après leurs tirs. */
+  miniDots(): MiniDot[] {
+    const c = this.client;
+    const g = c?.game;
+    if (!c || !g) return [];
+    const out: MiniDot[] = [];
+    const now = performance.now() / 1000;
+    const add = (id: string, x: number, z: number) => {
+      if (id === c.me || !g.players[id]?.alive) return;
+      if (!this.isEnemy(id)) out.push({ x, z, kind: 'allie', a: 1 });
+      else {
+        const t = now - (this.lastShot.get(id) ?? -99);
+        if (t < 3) out.push({ x, z, kind: 'ennemi', a: t < 2 ? 1 : 3 - t });
+      }
+    };
+    for (const [id, r] of this.remotes) add(id, r.pos.x, r.pos.z);
+    for (const [id, b] of this.bots) add(id, b.ch.controller.x, b.ch.controller.z);
+    return out;
   }
 
   update(dt: number) {
@@ -218,7 +307,7 @@ export class GunfightGame {
     // réapparition décidée par la salle : on se place au point donné
     if (me && me.spawn.n !== this.spawnN) {
       this.spawnN = me.spawn.n;
-      this.placeAt(p, me.spawn.x, me.spawn.z);
+      this.placeAt(p, me.spawn.x, me.spawn.z, me.spawn.y);
       p.yaw = me.spawn.yaw;
       this.cam.yaw = me.spawn.yaw;
       p.root.rotation.x = 0;
@@ -239,8 +328,10 @@ export class GunfightGame {
     if (!frozen && this.input.consume('KeyR')) this.reload();
     const gun = isGun(this.item) ? this.item : null;
     if (alive) {
+      // arme en main : le corps reste face au viseur, on se déplace dans tous les sens
+      p.aimYaw = gun ? this.cam.yaw : null;
       p.update(dt, readMove(this.input, this.cam, frozen), this.cam.yaw);
-      if (gun) p.yaw = this.cam.yaw;
+      this.atLimit = this.confine(p) ? 0.6 : Math.max(0, this.atLimit - dt);
       p.root.visible = true;
     } else {
       // à terre : le corps bascule, la caméra reste
@@ -263,6 +354,13 @@ export class GunfightGame {
     p.animator.setItem(alive ? this.item : null);
     p.animator.aimPitch = this.cam.pitch;
     p.animator.ads = this.ads;
+    p.animator.reloading = this.reloadProgress(c.me, this.item);
+    // le recul se rattrape en partie (la visée redescend d'elle-même)
+    if (this.recoilDebt > 0) {
+      const back = Math.min(this.recoilDebt, this.recoilDebt * dt * 7 + dt * 0.02);
+      this.recoilDebt -= back;
+      this.cam.pitch -= back * 0.7;
+    }
     this.cam.aiming = alive && !!gun;
     document.body.classList.toggle('aiming', alive && playing && !!gun && !this.paused);
     this.sendAcc += dt;
@@ -274,9 +372,13 @@ export class GunfightGame {
     this.updateRemotes(dt);
     if (c instanceof LocalGF) this.updateBots(dt, c);
     this.cam.update(dt, p, this.village.collision);
-    // l'arme pointe exactement sur ce qui est sous le viseur ; à la lunette, le personnage s'efface
-    if (gun && alive) p.animator.aimTarget = this.aimPoint(this.cam.camera.getWorldDirection(new THREE.Vector3()), 60);
-    else p.animator.aimTarget = null;
+    // l'arme pointe sur ce qui est sous le viseur (distance amortie : pas de saut quand le viseur passe un bord)
+    if (gun && alive) {
+      const dir = this.cam.camera.getWorldDirection(new THREE.Vector3());
+      const d = Math.max(4, this.aimPoint(dir, 60).distanceTo(this.cam.camera.position));
+      this.aimDist += (d - this.aimDist) * Math.min(1, dt * 6);
+      p.animator.aimTarget = this.aimTarget.copy(this.cam.camera.position).addScaledVector(dir, this.aimDist);
+    } else p.animator.aimTarget = null;
     if (scoped && alive) p.root.visible = false;
     for (const t of this.tracers) {
       t.life -= dt;
@@ -393,8 +495,10 @@ export class GunfightGame {
     }
     const o = cam.position;
     // recul : le canon relève la visée, un peu de travers ; la dispersion s'ouvre
-    this.cam.pitch = Math.min(1.05, this.cam.pitch + W.recoil * (0.75 + Math.random() * 0.5) * (1 - this.ads * 0.35));
-    this.cam.yaw += (Math.random() - 0.5) * W.recoil * 0.5;
+    const kick = W.recoil * (0.8 + Math.random() * 0.4) * (1 - this.ads * 0.3);
+    this.cam.pitch = Math.min(1.05, this.cam.pitch + kick);
+    this.recoilDebt += kick;
+    this.cam.yaw += (Math.random() - 0.5) * W.recoil * (W.auto ? 0.8 : 0.4);
     this.bloom = Math.min(1.5, this.bloom + (W.auto ? 0.25 : 0.5));
     c.shoot(gun, [o.x, o.y, o.z], dirs, ends).then(
       (r) => {
@@ -421,6 +525,7 @@ export class GunfightGame {
     const c = this.client;
     if (!c) return;
     const me = c.me;
+    this.lastShot.set(s.by, performance.now() / 1000);
     const shooterAnim = s.by === me ? this.player?.animator : (this.remotes.get(s.by)?.anim ?? this.bots.get(s.by)?.ch.animator);
     if (s.weapon !== 'couteau') {
       shooterAnim?.fire();
@@ -479,8 +584,13 @@ export class GunfightGame {
       r.anim.setItem(t.item ?? 'pistolet');
       r.anim.aimPitch = t.pitch;
       r.anim.aimTarget = null;
-      const moved = Math.hypot(r.pos.x - before.x, r.pos.z - before.z) / Math.max(dt, 1e-3);
-      r.anim.update(dt, { speed: Math.min(t.speed, moved * 1.2 + 0.05), direction: t.dir, turnRate: step / Math.max(dt, 1e-3), grounded: t.grounded, vy: t.vy });
+      r.anim.reloading = this.reloadProgress(id, t.item);
+      const mx = r.pos.x - before.x;
+      const mz = r.pos.z - before.z;
+      const moved = Math.hypot(mx, mz) / Math.max(dt, 1e-3);
+      // arme en main : marche dans tous les sens (le corps reste tourné vers la visée)
+      const moveAngle = isGun(t.item) && moved > 0.3 ? wrap(Math.atan2(mx, mz) - r.yaw) : undefined;
+      r.anim.update(dt, { speed: Math.min(t.speed, moved * 1.2 + 0.05), direction: t.dir, turnRate: moveAngle !== undefined ? 0 : step / Math.max(dt, 1e-3), grounded: t.grounded, vy: t.vy, moveAngle });
       r.anim.root.position.copy(r.pos);
       r.anim.root.rotation.y = r.yaw;
     }
@@ -513,7 +623,7 @@ export class GunfightGame {
       if (!st) continue;
       if (st.spawn.n !== b.spawnN) {
         b.spawnN = st.spawn.n;
-        this.placeAt(ch, st.spawn.x, st.spawn.z);
+        this.placeAt(ch, st.spawn.x, st.spawn.z, st.spawn.y);
         ch.yaw = st.spawn.yaw;
         ch.root.rotation.x = 0;
         b.fall = 0;
@@ -583,16 +693,21 @@ export class GunfightGame {
         const dz = wz - pos.z;
         const d = Math.hypot(dx, dz);
         if (d < 2.5 || b.stuck > 1.2) {
-          b.waypoint = SPAWNS[Math.floor(Math.random() * SPAWNS.length)];
+          b.waypoint = this.randomSpawn();
           b.stuck = 0;
         } else cmd = { x: dx / d, z: dz / d, run: d > 12, jump: ch.controller.blocked && Math.random() < 0.02 };
         if (st.ammo[b.weapon] < W.magazine && !st.reloadUntil) c.room.reload(id, b.weapon);
       }
+      // face à sa cible, il se déplace de côté sans lui tourner le dos ; sinon il regarde où il va
+      if (look !== null) b.aim = wrap(b.aim + wrap(look - b.aim) * Math.min(1, dt * 8));
+      ch.aimYaw = look !== null ? b.aim : null;
       ch.update(dt, cmd, look);
-      if (look !== null) ch.yaw = wrap(ch.yaw + wrap(look - ch.yaw) * Math.min(1, dt * 8));
+      if (look === null) b.aim = ch.yaw;
+      if (this.confine(ch)) b.stuck += dt * 3;
       b.stuck = ch.controller.blocked && Math.hypot(cmd.x, cmd.z) > 0 ? b.stuck + dt : Math.max(0, b.stuck - dt);
       ch.animator.setItem(b.weapon);
       ch.animator.aimPitch = pitch;
+      ch.animator.reloading = this.reloadProgress(id, b.weapon);
       const k = ch.controller;
       c.room.pose(id, { x: k.x, y: k.y, z: k.z, yaw: ch.yaw, speed: Math.hypot(k.realVx, k.realVz), grounded: k.grounded, vy: k.vy, dir: 1, torch: false, pitch, item: b.weapon });
       if (fire && tp && b.target) {

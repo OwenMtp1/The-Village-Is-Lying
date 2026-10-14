@@ -93,13 +93,28 @@ planchers et toits dans la direction du regard (`Espace` / `C` pour monter / des
 point, on réapparaît au bout de 3 s loin des adversaires (1,5 s de protection). La partie s'arrête au score visé ou
 à la fin du temps.
 
-| Arme | Corps | Tête | Cadence | Chargeur | Portée | Particularité |
-|---|---|---|---|---|---|---|
-| `1` Pistolet | 34 | ×2,2 (75) | coup par coup | 12 | 55 m | précis épaulé |
-| `2` Carabine | 25 | ×2 (50) | rafale (bouton maintenu) | 30 | 80 m | recul faible, dispersion à la hanche |
-| `3` Fusil à pompe | 8 plombs × 15 | ×1,5 | lente | 6 | 24 m | dévastateur au contact |
-| `4` Fusil de précision | 85 | ×3 (mort) | très lente | 5 | 180 m | lunette (grossissement ×4,5) |
-| `5` Couteau | 60 | — | — | — | 2,3 m | corps à corps |
+| Arme | Corps (de près) | Tête | Perte au loin | Cadence | Chargeur | Recharge | Portée |
+|---|---|---|---|---|---|---|---|
+| `1` Pistolet | 28 (4 balles) | ×2 | dès 18 m, −40 % à 45 m | coup par coup | 12 | 1,5 s | 60 m |
+| `2` Carabine | 24 (5 balles) | ×1,75 | dès 30 m, −35 % à 80 m | rafale (bouton maintenu) | 30 | 2,3 s | 110 m |
+| `3` Fusil à pompe | 9 plombs × 13 (mort à bout portant) | ×1,5 | dès 7 m, −75 % à 22 m | lente, pompe | 6 | 3 s | 30 m |
+| `4` Fusil de précision | 90 | ×3 (mort) | aucune | très lente, culasse | 5 | 3,2 s | 260 m |
+| `5` Couteau | 60 | — | — | — | — | — | 2,3 m |
+
+**Cartes** (au choix à la création de la salle ou en solo) : *Le Village* (tout), *Les Souterrains* (galeries et
+salles à 8 m sous terre), *Le Quartier des Tisserands* (rues serrées entre les maisons), *La Place du Marché*
+(petite arène), *L'Église et le Cimetière*, *La Ferme des Brumes* (grange, écuries, champs : longues distances),
+*La Forêt de la Lisière* (sous-bois). Chacune a ses points d'apparition et une limite invisible (« Limite de la
+carte ») ; le serveur refuse les positions hors carte. Définitions : `src/shared/gunfightMaps.ts`.
+
+**Mini-carte** en bas à gauche (tournée selon le regard) : coéquipiers en blanc, adversaires en rouge seulement
+pendant 3 s après un tir.
+
+**Animations** : arme en main, le corps reste face au viseur et l'on se déplace dans tous les sens (les jambes et le
+bassin partent dans le sens de la marche, de côté ou à reculons, le buste reste tourné vers la visée) ; mains
+refermées sur l'arme ; rechargement (arme abaissée, la main gauche va chercher un chargeur ; cartouche par
+cartouche au fusil à pompe), pompe et culasse réarmées après chaque coup, culasse du pistolet qui recule ; le recul
+se rattrape en partie de lui-même.
 
 **Visée** : le viseur est au centre de l'écran et l'arme pointe exactement sur ce qu'il désigne ; clic droit
 maintenu pour épauler (zoom, caméra rapprochée, dispersion quasi nulle ; lunette noire au fusil de précision).

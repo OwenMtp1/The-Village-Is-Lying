@@ -114,6 +114,16 @@ export class GunfightController {
     return `<div class="pause-journal gf-pause"><h3>Scores</h3>${scoreboard(G, this.client!.me, (id) => this.client!.nameOf(id))}</div>`;
   }
 
+  /** À chaque image : mini-carte et avertissement de limite (le reste de l'interface suit `render`). */
+  frame() {
+    const c = this.client;
+    const p = this.game.player;
+    if (!c?.game || !this.hud.el.classList.contains('open')) return;
+    const me = p && this.game.alive ? { x: p.controller.x, z: p.controller.z, yaw: this.game.cam.yaw } : null;
+    this.hud.minimap.render(this.game.map, me, this.game.miniDots());
+    this.hud.outOfMap(this.game.atLimit > 0);
+  }
+
   render() {
     const c = this.client;
     if (!c) return;
