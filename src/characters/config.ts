@@ -41,6 +41,26 @@ export const MOVE = {
   fixedStep: 1 / 120,
 };
 
+/** Profil de déplacement (vitesses, accélérations, rotation du corps). */
+export type MoveProfile = Pick<typeof MOVE, 'walkSpeed' | 'runSpeed' | 'accel' | 'runAccel' | 'decel' | 'runDecel' | 'reverseDecel' | 'turnRateIdle' | 'turnRateRun' | 'turnSmoothing'>;
+
+/**
+ * Gunfight : déplacement de jeu de tir — trot par défaut, sprint (Maj), départs et arrêts quasi immédiats,
+ * rotation vive quand on sprinte face à la course.
+ */
+export const GF_MOVE: MoveProfile = {
+  walkSpeed: 4.0,
+  runSpeed: 6.2,
+  accel: 30,
+  runAccel: 16,
+  decel: 34,
+  runDecel: 24,
+  reverseDecel: 44,
+  turnRateIdle: 16,
+  turnRateRun: 11,
+  turnSmoothing: 24,
+};
+
 export const JUMP = {
   /** hauteur du saut (m) : un saut sur place crédible, pas un bond de super-héros */
   height: 0.5,

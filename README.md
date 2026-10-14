@@ -124,7 +124,12 @@ carabine, fusil d'assaut, fusil tactique, mitrailleuse et fusil de précision, u
 (« Protégé »), perdue dès qu'on tire. Fin de partie : bannière « Partie terminée — Victoire ! / Défaite » avant
 le tableau des scores.
 
-**Nuit** (au choix à la création) : la carte est plongée dans la nuit et chaque arme porte une lampe sous le
+**Déplacement** (propre au Gunfight) : trot à 4 m/s par défaut, sprint à 6 m/s (`Maj`, vers l'avant : arme
+abaissée, corps tourné vers la course, tir possible 0,15 s après), 2,4 m/s en visée épaulée, un peu plus lent de
+côté et à reculons ; départs et arrêts quasi immédiats ; caméra collée au personnage. Les robots se déplacent
+de la même façon.
+
+**Nuit** (au choix à la création ; toujours actif aux Souterrains, même de jour) : la carte est plongée dans la nuit et chaque arme porte une lampe sous le
 canon (`L` pour l'éteindre ou la rallumer) et un laser (`O`). Le fil du laser n'est visible que par celui qui vise ;
 les autres n'en voient que le point rouge, là où il touche (décor ou personnage). Les faisceaux des joueurs
 proches éclairent la scène ; le serveur ne transmet lampes et lasers que dans une partie de nuit.

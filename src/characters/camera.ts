@@ -23,6 +23,8 @@ export class PlayerCamera {
   aiming = false;
   /** vol libre (noclip) : la caméra traverse aussi les murs */
   noCollide = false;
+  /** suivi serré (Gunfight) : la caméra colle au personnage, sans retard à grande vitesse */
+  tight = false;
   /** visée épaulée (clic droit) : champ de vision réduit d'autant (1 = normal), caméra plus proche */
   zoom = 1;
   private zoomS = 1;
@@ -86,9 +88,10 @@ export class PlayerCamera {
       this.initialized = true;
     }
     // suivi souple (vertical surtout : marches, sauts) sans retard horizontal gênant
-    this.pivot.x += (want.x - this.pivot.x) * Math.min(1, dt * CAMERA.follow * 1.5);
-    this.pivot.z += (want.z - this.pivot.z) * Math.min(1, dt * CAMERA.follow * 1.5);
-    this.pivot.y += (want.y - this.pivot.y) * Math.min(1, dt * CAMERA.follow * 0.5);
+    const kh = this.tight ? 1 : Math.min(1, dt * CAMERA.follow * 1.5);
+    this.pivot.x += (want.x - this.pivot.x) * kh;
+    this.pivot.z += (want.z - this.pivot.z) * kh;
+    this.pivot.y += (want.y - this.pivot.y) * Math.min(1, dt * CAMERA.follow * (this.tight ? 2 : 0.5));
     const right = new THREE.Vector3(-Math.cos(this.yaw), 0, Math.sin(this.yaw));
     const k = Math.min(1, dt * 8);
     this.aimS += ((this.aiming ? 1 : 0) - this.aimS) * k;

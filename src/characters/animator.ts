@@ -119,6 +119,9 @@ export class CharacterAnimator {
   aimTarget: THREE.Vector3 | null = null;
   /** visée épaulée (clic droit), de 0 à 1 */
   ads = 0;
+  /** sprint : arme abaissée en travers du corps (0 à 1, amorti) */
+  sprint = false;
+  private sprintS = 0;
   /** accessoires de nuit montés sur l'arme : lampe et laser */
   gunTorch = false;
   gunLaser = false;
@@ -327,7 +330,8 @@ export class CharacterAnimator {
     this.loco.forEach((l, i) => {
       l.w += (targets[i] - l.w) * k;
       sumW += l.w;
-      freq += l.w * (Math.max(speed, 0.25) / l.speed / l.a.getClip().duration);
+      // au-delà de la vitesse du clip, la cadence plafonne (une foulée frénétique choque plus qu'un léger glissé)
+      freq += l.w * (Math.min(Math.max(speed, 0.25) / l.speed, 1.35) / l.a.getClip().duration);
     });
     if (sumW > 1e-3) {
       // en l'air, la foulée se fige presque (les jambes ne « courent » pas dans le vide)
@@ -448,7 +452,8 @@ export class CharacterAnimator {
     const kick = this.fireT * this.fireT;
     // rechargement : l'arme s'abaisse et pivote vers la gauche, la main gauche va chercher un chargeur et revient
     const r = this.reloading;
-    const lowered = r === null ? 0 : THREE.MathUtils.smoothstep(r, 0, 0.12) * (1 - THREE.MathUtils.smoothstep(r, 0.85, 1));
+    this.sprintS += ((this.sprint ? 1 : 0) - this.sprintS) * Math.min(1, dt * 10);
+    const lowered = Math.max(r === null ? 0 : THREE.MathUtils.smoothstep(r, 0, 0.12) * (1 - THREE.MathUtils.smoothstep(r, 0.85, 1)), this.sprintS * 0.85);
     const cyc = this.cycleT > 0 && this.cycleT < 1 ? Math.sin(Math.PI * this.cycleT) : 0;
     const reach = (g.long ? 0.26 - 0.03 * this.ads : 0.47) - 0.12 * lowered;
     const pos = this.pivotS.clone().addScaledVector(X, reach - g.kickBack * kick).addScaledVector(Y, (g.long ? -0.03 : -0.02) - 0.1 * lowered);
@@ -518,7 +523,7 @@ export class CharacterAnimator {
     let f = 0;
     for (const l of this.loco) {
       w += l.w;
-      f += l.w * (Math.max(this.speedS, 0.25) / l.speed / l.a.getClip().duration);
+      f += l.w * (Math.min(Math.max(this.speedS, 0.25) / l.speed, 1.35) / l.a.getClip().duration);
     }
     return w > 1e-3 ? f / w : 0;
   }

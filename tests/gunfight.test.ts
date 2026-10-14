@@ -349,15 +349,16 @@ test('progression : couteau au départ, arme suivante à chaque palier, jusqu’
   assert.ok(out.events.some((e) => /Nouvelle arme : Pistolet/.test(e)));
 });
 
-test('nuit : lampe et laser transmis aux autres seulement dans une partie de nuit', () => {
-  for (const night of [false, true]) {
-    const { room, ids, clock } = setup({ mode: 'ffa', night });
+test('nuit : lampe et laser transmis aux autres de nuit, et toujours aux Souterrains', () => {
+  for (const [night, map] of [[false, 'village'], [true, 'village'], [true, 'souterrains'], [false, 'souterrains']] as const) {
+    const { room, ids, clock } = setup({ mode: 'ffa', night, map });
     room.start(ids[0]);
     clock.advance(30);
-    room.pose(ids[0], { ...pose(0, 0), torch: true, laser: true });
+    const s = room.stateOf(ids[0])!.spawn;
+    room.pose(ids[0], { ...pose(s.x, s.z), y: s.y ?? 0, torch: true, laser: true });
     const v = room.posesView()[ids[0]];
-    assert.equal(v.torch, night);
-    assert.equal(v.laser, night);
+    assert.equal(v.torch, night || map === 'souterrains', `${map} ${night ? 'nuit' : 'jour'}`);
+    assert.equal(v.laser, night || map === 'souterrains');
   }
 });
 

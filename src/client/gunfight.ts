@@ -12,6 +12,7 @@ import { CharacterAnimator } from '../characters/animator';
 import { PlayerCamera } from '../characters/camera';
 import { Character } from '../characters/character';
 import { readMove } from '../characters/game';
+import { GF_MOVE } from '../characters/config';
 import type { MoveInput } from '../characters/controller';
 import type { Input } from '../input';
 import type { Village } from '../village/village';
@@ -108,6 +109,9 @@ export class GunfightGame {
   private bloom = 0;
   private aimTarget = new THREE.Vector3();
   private aimDist = 20;
+  /** sprint en cours ; sprint interdit jusqu'à (après un tir) */
+  sprinting = false;
+  private sprintBlock = 0;
   /** recul encore à rattraper (rad) : il revient en partie de lui-même */
   private recoilDebt = 0;
   /** dernier tir de chaque joueur (s, horloge locale) : points rouges sur la mini-carte */
@@ -136,6 +140,7 @@ export class GunfightGame {
     readonly torches: Flashlights,
   ) {
     this.cam = new PlayerCamera(camera);
+    this.cam.tight = true;
     // le fil du laser n'est visible que par le joueur qui vise ; les autres n'en voient que le point
     this.laserLine = new THREE.Line(
       new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(), new THREE.Vector3(0, 0, 1)]),
@@ -147,6 +152,11 @@ export class GunfightGame {
     // une seule lumière d'explosion, créée d'avance (le nombre de lumières ne change jamais)
     this.blastLight = new THREE.PointLight('#ffb35a', 0, 22, 1.6);
     scene.add(this.blastLight);
+  }
+
+  /** lampe et laser montés sur les armes : de nuit, et toujours aux Souterrains */
+  get gear() {
+    return this.night || !!this.map.underground;
   }
 
   get night() {
@@ -213,6 +223,7 @@ export class GunfightGame {
         const sp = g.players[id]?.spawn ?? { x: 0, y: null, z: 0, yaw: 0, n: 0 };
         if (id === c.me) {
           this.player = new Character(id, bases[i], world, sp.x, sp.z, sp.yaw);
+          this.player.controller.move = GF_MOVE;
           this.scene.add(this.player.root);
           this.cam.yaw = sp.yaw;
           this.cam.pitch = -0.1;
@@ -221,6 +232,7 @@ export class GunfightGame {
           if (this.cam.mode === 'subjective') this.player.animator.setFirstPerson(true);
         } else if (local?.bots.includes(id)) {
           const ch = new Character(id, bases[i], world, sp.x, sp.z, sp.yaw);
+          ch.controller.move = GF_MOVE;
           const tag = nameTag(c.nameOf(id), this.tagColor(id));
           ch.root.add(tag);
           tag.position.y = ch.height + 0.35;
@@ -286,7 +298,7 @@ export class GunfightGame {
    */
   private updateNight(armed: boolean) {
     const p = this.player!;
-    if (!this.night) {
+    if (!this.gear) {
       this.torches.off();
       this.laserLine.visible = false;
       for (const d of this.dots) d.visible = false;
@@ -620,21 +632,34 @@ export class GunfightGame {
       this.switchTo(allowed[(i + (m.wheel > 0 ? 1 : -1) + allowed.length) % allowed.length]);
     }
     if (!frozen && this.input.consume('KeyR')) this.reload();
-    if (this.night && !frozen && this.input.consume('KeyL')) {
+    if (this.gear && !frozen && this.input.consume('KeyL')) {
       this.torchOn = !this.torchOn;
       sfx.torch();
       this.sendPoseNow();
     }
-    if (this.night && !frozen && this.input.consume('KeyO')) {
+    if (this.gear && !frozen && this.input.consume('KeyO')) {
       this.laserOn = !this.laserOn;
       sfx.torch();
       this.sendPoseNow();
     }
     const gun = isGun(this.item) ? this.item : null;
+    const now = performance.now() / 1000;
     if (alive) {
-      // arme en main : le corps reste face au viseur, on se déplace dans tous les sens
-      p.aimYaw = gun ? this.cam.yaw : null;
-      p.update(dt, readMove(this.input, this.cam, frozen), this.cam.yaw);
+      // déplacement de jeu de tir : trot par défaut ; sprint (Maj) vers l'avant, arme abaissée, corps face à la
+      // course ; sinon le corps reste face au viseur et l'on se déplace dans tous les sens (plus lentement à
+      // reculons et en visée)
+      const mv = readMove(this.input, this.cam, frozen);
+      const [fx, fz] = this.cam.forward;
+      const len = Math.hypot(mv.x, mv.z);
+      const ahead = len > 0.1 ? (mv.x * fx + mv.z * fz) / len : 0;
+      const firing = this.input.held('Mouse0') || this.input.held('Mouse2');
+      this.sprinting = mv.run && len > 0.1 && ahead > 0.55 && !firing && now >= this.sprintBlock && p.controller.grounded !== false;
+      if (firing && mv.run) this.sprintBlock = now + 0.25;
+      mv.run = this.sprinting;
+      mv.scale = this.sprinting ? 1 : (ahead < -0.3 ? 0.78 : ahead < 0.5 ? 0.9 : 1) * (1 - 0.4 * this.ads);
+      p.aimYaw = gun && !this.sprinting ? this.cam.yaw : null;
+      p.animator.sprint = this.sprinting && !!gun;
+      p.update(dt, mv, this.cam.yaw);
       this.atLimit = this.confine(p) ? 0.6 : Math.max(0, this.atLimit - dt);
       p.root.visible = true;
     } else {
@@ -655,8 +680,8 @@ export class GunfightGame {
     const moving = Math.min(1, Math.hypot(k.realVx, k.realVz) / 5);
     this.bloom = Math.max(0, this.bloom - dt * 2.5);
     this.spread = W ? (W.spread + (W.adsSpread - W.spread) * this.ads) * (1 + moving * 0.9 + (k.grounded ? 0 : 1.5)) + this.bloom * W.spread : 0;
-    p.animator.gunTorch = this.night && this.torchOn;
-    p.animator.gunLaser = this.night && this.laserOn;
+    p.animator.gunTorch = this.gear && this.torchOn;
+    p.animator.gunLaser = this.gear && this.laserOn;
     p.animator.setItem(alive ? this.item : null);
     p.animator.aimPitch = this.cam.pitch;
     p.animator.ads = this.ads;
@@ -671,8 +696,9 @@ export class GunfightGame {
     document.body.classList.toggle('aiming', alive && playing && !!gun && !this.paused);
     this.sendAcc += dt;
     if (alive && playing && this.sendAcc > 1 / 15) this.sendPoseNow();
-    // tir : au coup par coup (clic), en rafale tant que le bouton est maintenu pour la carabine
-    const now = performance.now() / 1000;
+    // tir : au coup par coup (clic), en rafale tant que le bouton est maintenu ; après un sprint, l'arme revient en
+    // position avant de tirer
+    if (this.sprinting) this.nextFire = Math.max(this.nextFire, now + 0.15);
     const trigger = this.input.consume('Mouse0') || (!!W?.auto && this.input.held('Mouse0'));
     if (!frozen && trigger && now >= this.nextFire) this.attack(now);
     this.updateRemotes(dt);
@@ -720,7 +746,7 @@ export class GunfightGame {
     if (!p || !c) return;
     this.sendAcc = 0;
     const k = p.controller;
-    c.sendPose({ x: k.x, y: k.y, z: k.z, yaw: p.yaw, speed: Math.hypot(k.realVx, k.realVz), grounded: k.grounded, vy: k.vy, dir: 1, torch: this.night && this.torchOn, laser: this.night && this.laserOn, pitch: this.cam.pitch, item: this.item });
+    c.sendPose({ x: k.x, y: k.y, z: k.z, yaw: p.yaw, speed: Math.hypot(k.realVx, k.realVz), grounded: k.grounded, vy: k.vy, dir: 1, torch: this.gear && this.torchOn, laser: this.gear && this.laserOn, pitch: this.cam.pitch, item: this.item });
   }
 
   private reload() {
@@ -1054,12 +1080,12 @@ export class GunfightGame {
       if (look === null) b.aim = ch.yaw;
       if (this.confine(ch)) b.stuck += dt * 3;
       b.stuck = ch.controller.blocked && Math.hypot(cmd.x, cmd.z) > 0 ? b.stuck + dt : Math.max(0, b.stuck - dt);
-      ch.animator.gunTorch = ch.animator.gunLaser = this.night;
+      ch.animator.gunTorch = ch.animator.gunLaser = this.gear;
       ch.animator.setItem(b.weapon);
       ch.animator.aimPitch = pitch;
       ch.animator.reloading = this.reloadProgress(id, b.weapon);
       const k = ch.controller;
-      c.room.pose(id, { x: k.x, y: k.y, z: k.z, yaw: ch.yaw, speed: Math.hypot(k.realVx, k.realVz), grounded: k.grounded, vy: k.vy, dir: 1, torch: this.night, laser: this.night, pitch, item: b.weapon });
+      c.room.pose(id, { x: k.x, y: k.y, z: k.z, yaw: ch.yaw, speed: Math.hypot(k.realVx, k.realVz), grounded: k.grounded, vy: k.vy, dir: 1, torch: this.gear, laser: this.gear, pitch, item: b.weapon });
       if (fire && tp && b.target && gun && W) {
         // visée : poitrine ou tête, avec une erreur selon la difficulté ; plombs dispersés au fusil à pompe
         const eye = new THREE.Vector3(k.x, k.y + 1.5, k.z);

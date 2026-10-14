@@ -527,7 +527,7 @@ export class GFHud {
     cross.style.setProperty('--gap', `${Math.round(Math.min(80, Math.max(3, spreadPx)))}px`);
     cross.classList.toggle('knife', !isGun(item));
     this.el.classList.toggle('scoped', scoped);
-    this.el.classList.toggle('night', G.settings.night);
+    this.el.classList.toggle('night', G.settings.night || !!mapOf(G.settings.map).underground);
     // mort
     const dead = this.el.querySelector('.gf-dead') as HTMLElement;
     dead.classList.toggle('open', !!st && !st.alive && G.phase === 'jeu');

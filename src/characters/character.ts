@@ -3,7 +3,6 @@
  * joueur et aux autres personnages (plus tard : joueurs distants) — seule la source des commandes change.
  */
 import * as THREE from 'three';
-import { MOVE } from './config';
 import { CharacterController, type MoveInput } from './controller';
 import { CharacterAnimator } from './animator';
 import type { CharacterBase } from './assets';
@@ -76,10 +75,11 @@ export class Character {
         this.direction = -1;
       }
     } else if (lookYaw !== null && Math.abs(wrap(lookYaw - this.yaw)) > 1.1) target = lookYaw;
-    const runK = Math.min(1, c.speed / MOVE.runSpeed);
-    const maxRate = MOVE.turnRateIdle + (MOVE.turnRateRun - MOVE.turnRateIdle) * runK;
+    const M = c.move;
+    const runK = Math.min(1, c.speed / M.runSpeed);
+    const maxRate = M.turnRateIdle + (M.turnRateRun - M.turnRateIdle) * runK;
     const delta = wrap(target - this.yaw);
-    const step = this.aimYaw !== null ? delta : THREE.MathUtils.clamp(delta * Math.min(1, MOVE.turnSmoothing * dt), -maxRate * dt, maxRate * dt);
+    const step = this.aimYaw !== null ? delta : THREE.MathUtils.clamp(delta * Math.min(1, M.turnSmoothing * dt), -maxRate * dt, maxRate * dt);
     this.yaw = wrap(this.yaw + step);
     this.turnRate = dt > 0 ? step / dt : 0;
 

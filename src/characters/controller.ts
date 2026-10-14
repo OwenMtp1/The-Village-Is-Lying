@@ -6,7 +6,7 @@
  * Aucune dépendance au rendu : la vitesse RÉELLE (après collisions) est exposée pour régler la cadence des
  * jambes ; contre un mur, elle tombe à zéro et le personnage cesse de marcher sur place.
  */
-import { JUMP, MOVE } from './config';
+import { JUMP, MOVE, type MoveProfile } from './config';
 import type { CollisionWorld } from '../village/collision';
 
 export interface MoveInput {
@@ -16,6 +16,8 @@ export interface MoveInput {
   run: boolean;
   /** vrai à l'image où Espace est enfoncé (front montant), jamais en maintien */
   jump: boolean;
+  /** facteur de vitesse (visée épaulée, marche arrière…) */
+  scale?: number;
 }
 
 export type MoveEvent = { type: 'jump' } | { type: 'land'; impact: number } | { type: 'fall' };
@@ -42,6 +44,8 @@ export class CharacterController {
   private cooldown = 0;
   private acc = 0;
   private events: MoveEvent[] = [];
+  /** profil de déplacement (enquête par défaut, Gunfight plus vif) */
+  move: MoveProfile = MOVE;
   /** dernière entrée (maintenue entre deux pas fixes) */
   private input: MoveInput = { x: 0, z: 0, run: false, jump: false };
 
@@ -89,7 +93,8 @@ export class CharacterController {
     const len = Math.hypot(inp.x, inp.z);
     const dirX = len > 1e-3 ? inp.x / Math.max(1, len) : 0;
     const dirZ = len > 1e-3 ? inp.z / Math.max(1, len) : 0;
-    const top = inp.run ? MOVE.runSpeed : MOVE.walkSpeed;
+    const M = this.move;
+    const top = (inp.run ? M.runSpeed : M.walkSpeed) * (inp.scale ?? 1);
     // vitesse visée : la diagonale n'est jamais plus rapide (direction normalisée)
     const tx = dirX * top;
     const tz = dirZ * top;
@@ -97,11 +102,11 @@ export class CharacterController {
     const want = Math.hypot(tx, tz);
     // taux d'accélération selon la situation (démarrage, passage à la course, retour à la marche, arrêt, demi-tour)
     let rate: number;
-    if (want < 1e-3) rate = cur > MOVE.walkSpeed + 0.1 ? MOVE.runDecel : MOVE.decel;
-    else if (cur > 0.3 && (this.vx * tx + this.vz * tz) / (cur * want) < -0.3) rate = MOVE.reverseDecel;
-    else if (want > cur + 0.05) rate = cur >= MOVE.walkSpeed - 0.1 ? MOVE.runAccel : MOVE.accel;
-    else if (want < cur - 0.05) rate = MOVE.runDecel;
-    else rate = MOVE.accel;
+    if (want < 1e-3) rate = cur > M.walkSpeed + 0.1 ? M.runDecel : M.decel;
+    else if (cur > 0.3 && (this.vx * tx + this.vz * tz) / (cur * want) < -0.3) rate = M.reverseDecel;
+    else if (want > cur + 0.05) rate = cur >= M.walkSpeed - 0.1 ? M.runAccel : M.accel;
+    else if (want < cur - 0.05) rate = M.runDecel;
+    else rate = M.accel;
     if (!this.grounded) rate *= JUMP.airControl;
     const ddx = tx - this.vx;
     const ddz = tz - this.vz;

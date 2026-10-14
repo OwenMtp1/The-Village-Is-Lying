@@ -282,7 +282,7 @@ export class GunfightRoom {
     s.respawnAt = 0;
     s.shieldUntil = t + GF_RULES.spawnShield * 1000;
     s.spawn = { x: p.x, y: p.y, z: p.z, yaw, n: s.spawn.n + 1 };
-    this.poses.set(id, { x: p.x, y: p.y ?? 0, z: p.z, yaw, speed: 0, grounded: true, vy: 0, dir: 1, torch: this.settings.night, laser: this.settings.night, pitch: 0, item: this.allowed(id)[0], t });
+    this.poses.set(id, { x: p.x, y: p.y ?? 0, z: p.z, yaw, speed: 0, grounded: true, vy: 0, dir: 1, torch: this.settings.night || !!map.underground, laser: this.settings.night || !!map.underground, pitch: 0, item: this.allowed(id)[0], t });
     this.history.set(id, []);
   }
 
@@ -415,7 +415,8 @@ export class GunfightRoom {
       while (h.length && h[0].t < t - GF_RULES.lagMs) h.shift();
       this.history.set(id, h);
     }
-    const night = this.settings.night;
+    // lampes et lasers : de nuit, et toujours aux Souterrains
+    const night = this.settings.night || !!mapOf(this.settings.map).underground;
     this.poses.set(id, { x: p.x, y: p.y, z: p.z, yaw: p.yaw, speed: Math.min(p.speed, 6), grounded: !!p.grounded, vy: p.vy, dir: p.dir === -1 ? -1 : 1, torch: night && p.torch === true, laser: night && p.laser === true, pitch: Math.max(-1.5, Math.min(1.5, p.pitch ?? 0)), item, t });
   }
 
