@@ -43,7 +43,7 @@ export class GunfightController {
     });
     document.body.append(this.lobby.el, this.hud.el, this.results.el);
     this.hud.names = (id) => this.client?.nameOf(id) ?? '?';
-    game.onHitMarker = (k) => this.hud.hitMarker(k);
+    game.onHitMarker = (k, head) => this.hud.hitMarker(k, head);
     game.onDamaged = () => this.hud.damaged();
     this.results.onBack = () => {
       sfx.click();
@@ -144,6 +144,6 @@ export class GunfightController {
     if (lobbyOpen) this.lobby.render(L!);
     const hudOpen = inGame && !this.results.open;
     this.hud.el.classList.toggle('open', hudOpen);
-    if (hudOpen) this.hud.render(G!, c.me, c.serverNow(), this.game.item);
+    if (hudOpen) this.hud.render(G!, c.me, c.serverNow(), this.game.item, this.game.spreadPx(), this.game.scoped);
   }
 }

@@ -29,14 +29,41 @@
 .gf-feed li { background: rgba(0, 0, 0, 0.55); padding: 4px 10px; border-radius: 3px; font-size: 14px; display: flex; align-items: center; gap: 8px; animation: toast-in 0.25s var(--ease) both; }
 .gf-feed b.me { color: var(--gold-2); }
 .gf-w .ic { color: var(--ink-2); }
-.gf-cross { position: absolute; left: 50%; top: 50%; width: 26px; height: 26px; margin: -13px 0 0 -13px; }
-.gf-cross::before, .gf-cross::after { content: ''; position: absolute; background: #fff; box-shadow: 0 0 2px #000; }
-.gf-cross::before { left: 12px; top: 0; width: 2px; height: 26px; clip-path: polygon(0 0, 100% 0, 100% 35%, 0 35%, 0 65%, 100% 65%, 100% 100%, 0 100%); }
-.gf-cross::after { top: 12px; left: 0; height: 2px; width: 26px; clip-path: polygon(0 0, 35% 0, 35% 100%, 0 100%, 0 0, 65% 0, 100% 0, 100% 100%, 65% 100%); }
-.gf-cross i { position: absolute; left: 11px; top: 11px; width: 4px; height: 4px; border-radius: 50%; background: #fff; box-shadow: 0 0 2px #000; }
-.gf-cross.hit::before, .gf-cross.hit::after { background: #ffe07a; }
-.gf-cross.kill::before, .gf-cross.kill::after { background: #ff4a3a; }
-.gf-cross.hit, .gf-cross.kill { transform: rotate(45deg) scale(1.25); transition: transform 0.08s; }
+.gf-cross { --gap: 8px; position: absolute; left: 50%; top: 50%; width: 0; height: 0; transition: transform 0.08s; }
+.gf-cross span { position: absolute; background: #fff; box-shadow: 0 0 2px #000; transition: transform 0.06s linear; }
+.gf-cross .l, .gf-cross .r { top: -1px; width: 9px; height: 2px; }
+.gf-cross .t, .gf-cross .b { left: -1px; width: 2px; height: 9px; }
+.gf-cross .l { right: var(--gap); }
+.gf-cross .r { left: var(--gap); }
+.gf-cross .t { bottom: var(--gap); }
+.gf-cross .b { top: var(--gap); }
+.gf-cross i { position: absolute; left: -2px; top: -2px; width: 4px; height: 4px; border-radius: 50%; background: #fff; box-shadow: 0 0 2px #000; }
+.gf-cross.knife span { display: none; }
+.gf-cross.hit span { background: #ffe07a; }
+.gf-cross.kill span { background: #ff4a3a; }
+.gf-cross.head span, .gf-cross.head i { background: #ff2a1a; box-shadow: 0 0 6px #ff2a1a; }
+.gf-cross.hit, .gf-cross.kill { transform: rotate(45deg) scale(1.25); }
+.gf-headshot { position: absolute; left: 50%; top: calc(50% + 40px); transform: translateX(-50%); font: 700 18px var(--display); letter-spacing: 0.14em; text-transform: uppercase; color: #ff6a55; text-shadow: 0 0 6px #000, 0 0 2px #000; opacity: 0; pointer-events: none; }
+.gf-headshot.on { animation: gf-hs 0.9s ease-out; }
+@keyframes gf-hs { 0% { opacity: 1; transform: translateX(-50%) scale(1.3); } 25% { transform: translateX(-50%) scale(1); } 100% { opacity: 0; } }
+/* lunette du fusil de précision : cercle noir, réticule fin */
+.gf-scope { position: absolute; inset: 0; display: none; pointer-events: none; background: radial-gradient(circle at center, transparent 0, transparent min(38vh, 38vw), #000 calc(min(38vh, 38vw) + 2px)); }
+.gf-scope::before, .gf-scope::after { content: ''; position: absolute; background: rgba(0, 0, 0, 0.85); }
+.gf-scope::before { left: 50%; top: 0; bottom: 0; width: 2px; margin-left: -1px; }
+.gf-scope::after { top: 50%; left: 0; right: 0; height: 2px; margin-top: -1px; }
+.gf-scope i { position: absolute; left: 50%; top: 50%; width: 6px; height: 6px; margin: -3px 0 0 -3px; border-radius: 50%; background: #e33; }
+.gf-hud.scoped .gf-scope { display: block; }
+.gf-hud.scoped .gf-cross { display: none; }
+.gf-feed .gf-w { display: inline-flex; align-items: center; gap: 3px; color: var(--gold); }
+.gf-wic { width: 42px; height: 14px; }
+.gf-hs .ic { width: 16px; height: 16px; color: #ff6a55; }
+.gf-slots { position: absolute; right: 18px; bottom: 92px; margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 4px; align-items: flex-end; }
+.gf-slots li { display: flex; align-items: center; gap: 8px; padding: 3px 10px; background: rgba(10, 8, 6, 0.55); border: 1px solid transparent; border-radius: 6px; font-size: 13px; color: var(--muted); opacity: 0.75; }
+.gf-slots li.on { opacity: 1; color: var(--text, #f4ead6); border-color: var(--gold); background: var(--panel); }
+.gf-slots li.empty small { color: #ff7a6a; }
+.gf-slots li .gf-wic { color: currentColor; }
+.gf-slots kbd { font-size: 11px; min-width: 16px; text-align: center; }
+.gf-slots small { min-width: 18px; text-align: right; font-weight: 700; }
 .gf-dmg { position: absolute; inset: 0; opacity: 0; background: radial-gradient(ellipse at center, transparent 45%, rgba(200, 20, 10, 0.55)); }
 .gf-dmg.on { animation: gf-dmg 0.5s ease-out; }
 @keyframes gf-dmg { from { opacity: 1; } to { opacity: 0; } }

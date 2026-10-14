@@ -21,10 +21,22 @@ export class Input {
     target.addEventListener('pointerdown', (e) => {
       // clic gauche avec la souris capturée : action (coup de couteau, tir) ; le premier clic sert à capturer
       if (this.locked && e.button === 0) this.pressed.add('Mouse0');
+      // boutons maintenus (tir continu, visée au clic droit), seulement souris capturée
+      if (this.locked) this.down.add(`Mouse${e.button}`);
       this.dragging = true;
       target.setPointerCapture?.(e.pointerId);
     });
-    window.addEventListener('pointerup', () => (this.dragging = false));
+    window.addEventListener('pointerup', (e) => {
+      this.dragging = false;
+      this.down.delete(`Mouse${e.button}`);
+    });
+    // Chromium envoie un seul pointerdown pour plusieurs boutons à la fois : on suit aussi mousedown/mouseup
+    window.addEventListener('mousedown', (e) => this.locked && this.down.add(`Mouse${e.button}`));
+    window.addEventListener('mouseup', (e) => this.down.delete(`Mouse${e.button}`));
+    target.addEventListener('contextmenu', (e) => e.preventDefault());
+    document.addEventListener('pointerlockchange', () => {
+      if (!this.locked) for (const b of ['Mouse0', 'Mouse1', 'Mouse2']) this.down.delete(b);
+    });
     window.addEventListener('mousemove', (e) => {
       if (this.locked || this.dragging) {
         this.mouse.dx += e.movementX;

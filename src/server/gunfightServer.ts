@@ -83,9 +83,9 @@ export function gunfightServer(io: IO, sight: Sight, newCode: (taken: (c: string
     socket.on('gf:retour', (_p, ack) => guard(ack, () => need().backToLobby(pid)));
     socket.on('gf:quitter', () => leave(true));
     socket.on('gf:pose', (p) => room?.pose(pid, p));
-    socket.on('gf:tir', (p, ack) => guard(ack, () => need().shoot(pid, typeof p?.target === 'string' ? p.target : null, Array.isArray(p?.aim) && p.aim.length === 3 && p.aim.every(Number.isFinite) ? (p.aim as [number, number, number]) : undefined)));
+    socket.on('gf:tir', (p, ack) => guard(ack, () => need().shoot(pid, p?.weapon, p?.origin, p?.dirs, Array.isArray(p?.ends) ? p.ends : [])));
     socket.on('gf:couteau', (p, ack) => guard(ack, () => need().stab(pid, String(p?.target))));
-    socket.on('gf:recharger', (_p, ack) => guard(ack, () => need().reload(pid)));
+    socket.on('gf:recharger', (p, ack) => guard(ack, () => need().reload(pid, p?.weapon)));
     socket.on('disconnect', () => leave(room?.phase === 'salon'));
   }
 

@@ -18,10 +18,25 @@ import { ANIM, JUMP } from './config';
 import { LOCOMOTION, type CharacterBase } from './assets';
 import { applyPose, bipedRig, type Pose, type Rig } from './pose';
 import { torchModel } from './flashlight';
-import { gunModel, knifeModel } from './weapons';
+import { gunRig, knifeModel, type GunKind, type GunRig } from './weapons';
+import { setWorldQuaternion, solveArm } from './armIk';
 
-/** Objet tenu dans la main droite (un seul à la fois). */
-export type HandItem = 'lampe' | 'couteau' | 'pistolet' | null;
+/** Objet tenu en main (un seul à la fois) : lampe, couteau, ou une arme à feu tenue à deux mains. */
+export type HandItem = 'lampe' | 'couteau' | GunKind | null;
+const GUN_KINDS: readonly string[] = ['pistolet', 'fusil', 'pompe', 'precision'];
+export const isGunItem = (i: HandItem): i is GunKind => !!i && GUN_KINDS.includes(i);
+
+const _v1 = new THREE.Vector3();
+const _v2 = new THREE.Vector3();
+const _v3 = new THREE.Vector3();
+const _m = new THREE.Matrix4();
+const _mb = new THREE.Matrix4();
+const _q1 = new THREE.Quaternion();
+const _q2 = new THREE.Quaternion();
+const AXIS_Z = new THREE.Vector3(0, 0, 1);
+/** orientation des mains par rapport à l'arme (repère des os de main Biped) */
+const HAND_R = new THREE.Quaternion();
+const HAND_L = new THREE.Quaternion().setFromEuler(new THREE.Euler(Math.PI, 0, 0));
 
 export interface AnimInput {
   /** vitesse horizontale réelle (m/s) */
@@ -67,14 +82,19 @@ export class CharacterAnimator {
   /** lampe de poche tenue dans la main droite (visible quand elle est allumée) */
   private torch: THREE.Group = torchModel();
   private knife: THREE.Group = knifeModel();
-  private gun: THREE.Group = gunModel();
+  private guns: Partial<Record<GunKind, GunRig>> = {};
   private hand: THREE.Object3D | null = null;
+  private lHand: THREE.Object3D | null = null;
   item: HandItem = null;
   /** coup de couteau, recul du tir : 1 au déclenchement, décroît jusqu'à 0 */
   private strikeT = 0;
   private fireT = 0;
-  /** tangage de la visée (pistolet), positif vers le haut */
+  /** tangage de la visée (armes à feu), positif vers le haut */
   aimPitch = 0;
+  /** point visé (monde) : l'arme pointe exactement dessus (joueur local) ; sinon, tangage seul */
+  aimTarget: THREE.Vector3 | null = null;
+  /** visée épaulée (clic droit), de 0 à 1 */
+  ads = 0;
 
   constructor(readonly base: CharacterBase) {
     this.model = cloneSkinned(base.scene) as THREE.Group;
@@ -100,17 +120,16 @@ export class CharacterAnimator {
     this.rig = bipedRig(this.model);
     this.model.traverse((o) => {
       if (o.name === 'R_Hand') this.hand = o;
+      if (o.name === 'L_Hand') this.lHand = o;
     });
     if (this.hand) {
       // la lampe suit la main ; l'échelle du modèle est compensée pour garder sa vraie taille
       this.torch.scale.setScalar(1 / this.scale);
       this.torch.position.set(0.09 / this.scale, 0.01 / this.scale, 0.03 / this.scale);
       this.hand.add(this.torch);
-      for (const w of [this.knife, this.gun]) {
-        w.scale.setScalar(1 / this.scale);
-        w.position.set(0.08 / this.scale, 0.0, 0.03 / this.scale);
-        this.hand.add(w);
-      }
+      this.knife.scale.setScalar(1 / this.scale);
+      this.knife.position.set(0.08 / this.scale, 0.0, 0.03 / this.scale);
+      this.hand.add(this.knife);
     }
 
     this.mixer = new THREE.AnimationMixer(this.model);
@@ -157,12 +176,22 @@ export class CharacterAnimator {
     else if (this.item === 'lampe') this.setItem(null);
   }
 
-  /** Objet en main : lampe, couteau, pistolet ou rien (un seul à la fois). */
+  /** Objet en main : lampe, couteau, arme à feu ou rien (un seul à la fois). */
   setItem(item: HandItem) {
+    if (isGunItem(item) && !this.guns[item]) {
+      // armes créées à la première utilisation ; portées par la racine (vraie taille), placées à chaque image
+      const g = gunRig(item);
+      this.guns[item] = g;
+      this.root.add(g.group);
+    }
     this.item = item;
     this.torch.visible = item === 'lampe';
     this.knife.visible = item === 'couteau';
-    this.gun.visible = item === 'pistolet';
+    for (const [k, g] of Object.entries(this.guns)) g.group.visible = k === item;
+  }
+
+  private get gun(): GunRig | null {
+    return isGunItem(this.item) ? (this.guns[this.item] ?? null) : null;
   }
 
   /** Coup de couteau (bras projeté vers l'avant). */
@@ -178,7 +207,9 @@ export class CharacterAnimator {
   /** Position (monde) de la bouche du canon (départ de la balle, éclair). */
   muzzlePosition(out = new THREE.Vector3()) {
     this.root.updateMatrixWorld(true);
-    return out.set(0.24, 0.035, 0).applyMatrix4(this.gun.matrixWorld);
+    const g = this.gun;
+    if (!g) return this.handPosition(out);
+    return out.copy(g.muzzle).applyMatrix4(g.group.matrixWorld);
   }
 
   /** Position (monde) de la main droite : départ du faisceau de la lampe. */
@@ -269,13 +300,9 @@ export class CharacterAnimator {
         pose.RightArm = { bend: -0.3 - 1.05 * c, side: -0.1 * c };
         pose.RightForeArm = { bend: -1.0 + 0.95 * c };
         if (c > 0) pose.Spine = { bend: 0.18 * c };
-      } else if (this.item === 'pistolet') {
-        const kick = this.fireT * this.fireT;
-        pose.RightArm = { bend: -1.42 - THREE.MathUtils.clamp(this.aimPitch, -0.9, 0.9) - 0.2 * kick, side: -0.12 };
-        pose.RightForeArm = { bend: -0.08 - 0.35 * kick };
       }
     }
-    const flash = this.gun.getObjectByName('eclair') as THREE.Mesh | undefined;
+    const flash = this.gun?.group.getObjectByName('eclair') as THREE.Mesh | undefined;
     if (flash) {
       (flash.material as THREE.MeshBasicMaterial).opacity = this.fireT > 0.55 ? 1 : 0;
       flash.scale.setScalar(0.7 + Math.random() * 0.6);
@@ -289,8 +316,10 @@ export class CharacterAnimator {
       pose.LeftUpLeg = { bend: -0.3 * tuck * a };
       pose.RightLeg = { bend: 1.0 * tuck * a };
       pose.LeftLeg = { bend: 0.55 * tuck * a };
-      pose.RightArm = { bend: (-0.35 + 0.25 * (1 - tuck)) * a, side: 0.12 * a };
-      pose.LeftArm = { bend: (-0.25 + 0.2 * (1 - tuck)) * a, side: -0.12 * a };
+      if (!this.gun) {
+        pose.RightArm = { bend: (-0.35 + 0.25 * (1 - tuck)) * a, side: 0.12 * a };
+        pose.LeftArm = { bend: (-0.25 + 0.2 * (1 - tuck)) * a, side: -0.12 * a };
+      }
       pose.Spine = { bend: 0.08 * tuck * a };
     }
     const leanTarget = THREE.MathUtils.clamp(-s.turnRate * speed * ANIM.turnLean, -0.14, 0.14) * (s.grounded ? 1 : 0.3);
@@ -300,6 +329,50 @@ export class CharacterAnimator {
 
     // enfoncement du bassin à l'atterrissage (le corps encaisse le choc)
     this.model.position.y = -ANIM.landDip * crouchW * 0.6;
+    this.holdGun();
+  }
+
+  /**
+   * Arme à feu tenue à deux mains : l'arme est placée devant les épaules dans l'axe de la visée (bras tendus pour
+   * le pistolet, crosse à l'épaule pour les armes longues), puis les bras vont la chercher (cinématique inverse) :
+   * main droite sur la poignée, main gauche en soutien. Le recul repousse l'arme et relève le canon.
+   */
+  private holdGun() {
+    const g = this.gun;
+    const R = this.rig;
+    if (!g || !this.hand || !this.lHand || !R.RightArm || !R.RightForeArm || !R.LeftArm || !R.LeftForeArm) return;
+    this.root.updateMatrixWorld(true);
+    const inv = _m.copy(this.root.matrixWorld).invert();
+    const sR = R.RightArm.getWorldPosition(_v1).applyMatrix4(inv);
+    const sL = R.LeftArm.getWorldPosition(_v2).applyMatrix4(inv);
+    // pivot de la visée : entre les épaules (pistolet), épaule droite (armes longues) ; repère de la racine (+z avant, -x droite)
+    const pivot = g.long ? sR.clone().lerp(sL, 0.2) : sR.clone().lerp(sL, 0.5);
+    pivot.y += g.long ? -0.04 : 0.02 + 0.06 * this.ads;
+    const dir = _v3;
+    if (this.aimTarget) dir.copy(this.aimTarget).applyMatrix4(inv).sub(pivot);
+    else dir.set(0, Math.sin(this.aimPitch), Math.cos(this.aimPitch));
+    // l'arme reste devant le personnage
+    if (dir.z < 0.35 * Math.hypot(dir.x, dir.z)) dir.z = 0.35 * Math.hypot(dir.x, dir.z) + 1e-3;
+    dir.normalize();
+    const X = dir.clone();
+    const Y = new THREE.Vector3(0, 1, 0).addScaledVector(X, -X.y).normalize();
+    const Z = new THREE.Vector3().crossVectors(X, Y);
+    const kick = this.fireT * this.fireT;
+    const reach = g.long ? 0.26 - 0.03 * this.ads : 0.47;
+    const pos = pivot.clone().addScaledVector(X, reach - g.kickBack * kick).addScaledVector(Y, g.long ? -0.03 : -0.02);
+    if (!g.long) pos.x -= 0.03;
+    g.group.position.copy(pos);
+    g.group.quaternion.setFromRotationMatrix(_mb.makeBasis(X, Y, Z)).multiply(_q1.setFromAxisAngle(AXIS_Z, g.kickUp * kick));
+    g.group.updateMatrixWorld(true);
+    const gunQ = g.group.getWorldQuaternion(_q2);
+    const rootQ = this.root.getWorldQuaternion(new THREE.Quaternion());
+    // mains : poignets sur les points de prise, coudes vers le bas et l'extérieur
+    const rw = g.group.localToWorld(g.rightWrist.clone());
+    solveArm(R.RightArm, R.RightForeArm, this.hand, rw, new THREE.Vector3(-0.7, -1, -0.25).applyQuaternion(rootQ));
+    setWorldQuaternion(this.hand, gunQ.clone().multiply(HAND_R));
+    const lw = g.group.localToWorld(g.leftWrist.clone());
+    solveArm(R.LeftArm, R.LeftForeArm, this.lHand, lw, new THREE.Vector3(0.7, -1, -0.25).applyQuaternion(rootQ));
+    setWorldQuaternion(this.lHand, gunQ.clone().multiply(HAND_L));
   }
 
   /** Vitesse de lecture effective des jambes, pour les contrôles (cycles par seconde). */

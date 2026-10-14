@@ -5,7 +5,7 @@
 import type { Sex } from '../characters/catalog';
 import type { Composition, Role } from './roles';
 import type { Winner } from './rules';
-import type { GFEvent, GFGameView, GFLobbyView, GFSettings, GFShot, Team } from './gunfight';
+import type { GFEvent, GFGameView, GFGun, GFLobbyView, GFSettings, GFShot, GFShotResult, Team, Vec3 } from './gunfight';
 
 export interface LobbyPlayer {
   id: string;
@@ -45,7 +45,7 @@ export interface PlayerPose {
   item?: HeldItem;
 }
 
-export type HeldItem = 'couteau' | 'pistolet' | null;
+export type HeldItem = 'couteau' | 'pistolet' | 'fusil' | 'pompe' | 'precision' | null;
 
 /** Geste vu par les joueurs proches : coup de couteau, tir (pour animer l'arme du joueur concerné). */
 export interface Gesture {
@@ -106,9 +106,10 @@ export interface ClientToServer {
   'gf:quitter': () => void;
   'gf:retour': (p: Record<string, never>, ack: Ack) => void;
   'gf:pose': (p: PlayerPose) => void;
-  'gf:tir': (p: { target: string | null; aim?: [number, number, number] }, ack: Ack<{ hit: boolean; killed: boolean }>) => void;
-  'gf:couteau': (p: { target: string }, ack: Ack<{ hit: boolean; killed: boolean }>) => void;
-  'gf:recharger': (p: Record<string, never>, ack: Ack) => void;
+  /** origine (caméra), direction de chaque balle, impacts vus par le navigateur (traçantes) */
+  'gf:tir': (p: { weapon: GFGun; origin: Vec3; dirs: Vec3[]; ends?: Vec3[] }, ack: Ack<GFShotResult>) => void;
+  'gf:couteau': (p: { target: string }, ack: Ack<GFShotResult>) => void;
+  'gf:recharger': (p: { weapon?: GFGun }, ack: Ack) => void;
   'salon:creer': (p: { name: string; sex: Sex; composition: Composition }, ack: Ack<{ code: string; playerId: string; token: string }>) => void;
   'salon:rejoindre': (p: { code: string; name: string; sex: Sex; token?: string }, ack: Ack<{ code: string; playerId: string; token: string }>) => void;
   'salon:composition': (p: { composition: Composition }, ack: Ack) => void;

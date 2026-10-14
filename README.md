@@ -88,9 +88,30 @@ planchers et toits dans la direction du regard (`Espace` / `C` pour monter / des
 
 ## Mode Gunfight
 
-**Menu principal → Mode Gunfight** : un autre jeu dans le même village. Tout le monde apparaît armé — pistolet
-(8 balles, `R` pour recharger, `1`) et couteau (`2`) —, chaque élimination rapporte un point, on réapparaît au bout
-de 3 s loin des adversaires (1,5 s de protection). La partie s'arrête au score visé ou à la fin du temps.
+**Menu principal → Mode Gunfight** : un autre jeu dans le même village. Tout le monde apparaît avec cinq armes
+(touches `1` à `5` ou molette), chacune avec son chargeur (`R` pour recharger) ; chaque élimination rapporte un
+point, on réapparaît au bout de 3 s loin des adversaires (1,5 s de protection). La partie s'arrête au score visé ou
+à la fin du temps.
+
+| Arme | Corps | Tête | Cadence | Chargeur | Portée | Particularité |
+|---|---|---|---|---|---|---|
+| `1` Pistolet | 34 | ×2,2 (75) | coup par coup | 12 | 55 m | précis épaulé |
+| `2` Carabine | 25 | ×2 (50) | rafale (bouton maintenu) | 30 | 80 m | recul faible, dispersion à la hanche |
+| `3` Fusil à pompe | 8 plombs × 15 | ×1,5 | lente | 6 | 24 m | dévastateur au contact |
+| `4` Fusil de précision | 85 | ×3 (mort) | très lente | 5 | 180 m | lunette (grossissement ×4,5) |
+| `5` Couteau | 60 | — | — | — | 2,3 m | corps à corps |
+
+**Visée** : le viseur est au centre de l'écran et l'arme pointe exactement sur ce qu'il désigne ; clic droit
+maintenu pour épauler (zoom, caméra rapprochée, dispersion quasi nulle ; lunette noire au fusil de précision).
+La dispersion s'ouvre en mouvement, en l'air et en tir soutenu (le viseur s'écarte d'autant), le recul relève
+le canon. Les armes se tiennent à deux mains : l'arme est placée dans l'axe de la visée (bras tendus pour le
+pistolet, crosse à l'épaule pour les armes longues) et les bras viennent la saisir par cinématique inverse
+(`src/characters/armIk.ts`, modèles dans `src/characters/weapons.ts`).
+
+**Tirs à la tête** : chaque personnage a une tête (sphère) et un corps (capsule) ; le navigateur n'envoie que le
+rayon de chaque balle (origine, direction), le serveur cherche ce qu'il traverse — en tenant compte des positions
+des 350 dernières ms pour compenser la latence — et applique le multiplicateur de la tête. Marqueur rouge,
+« Tête ! », crâne dans le fil des éliminations, colonne « Tête » au tableau des scores.
 
 | | |
 |---|---|
@@ -100,9 +121,12 @@ de 3 s loin des adversaires (1,5 s de protection). La partie s'arrête au score 
 | **Chacun pour soi** | chaque joueur pour lui ; tableau des scores individuel |
 | **Match à mort par équipe** | Équipe Rouge contre Équipe Bleue ; chacun choisit son équipe au salon (« Rejoindre cette équipe »), pas de tir allié, score d'équipe |
 
-En combat : vie, munitions, score et temps, fil des éliminations, viseur avec marqueur de touche, écran
-d'élimination, `Tab` pour le tableau des scores, `Échap` pour la carte et les scores. Le serveur (ou la salle locale
-en solo) vérifie chaque tir : arme, cadence, munitions, portée, visée, ligne de vue, équipe. Règles :
+En combat : vie, barre d'armes et munitions, score et temps, fil des éliminations, viseur avec marqueur de touche,
+écran d'élimination, `Tab` pour le tableau des scores, `Échap` pour la carte et les scores. Le serveur (ou la salle
+locale en solo) recalcule chaque tir : arme en main, cadence, munitions, origine et direction du rayon, zone
+touchée, portée, ligne de vue (depuis les yeux du tireur et depuis sa caméra), équipe. Les robots du mode solo
+reçoivent une arme au hasard à chaque apparition et gardent la distance qui lui convient ; leurs balles passent
+par le même calcul. La dispersion est tirée par le navigateur (le serveur ne la vérifie pas). Règles :
 `src/shared/gunfight.ts`, salle : `src/shared/gunfightRoom.ts` (partagée par le serveur et le solo), tests :
 `tests/gunfight.test.ts`, contrôle dans le navigateur : `scripts/gunfight-check.ts`.
 

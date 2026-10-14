@@ -23,6 +23,9 @@ export class PlayerCamera {
   aiming = false;
   /** vol libre (noclip) : la caméra traverse aussi les murs */
   noCollide = false;
+  /** visée épaulée (clic droit) : champ de vision réduit d'autant (1 = normal), caméra plus proche */
+  zoom = 1;
+  private zoomS = 1;
   private shoulderS = 0;
   private aimS = 0;
   private initialized = false;
@@ -35,11 +38,13 @@ export class PlayerCamera {
   }
 
   look(dx: number, dy: number, wheel: number) {
-    this.yaw -= dx * CAMERA.sensitivity;
+    // en visée, la souris ralentit avec le grossissement (même geste = même déplacement à l'écran)
+    const sens = CAMERA.sensitivity * this.zoomS;
+    this.yaw -= dx * sens;
     const min = this.mode === 'subjective' ? CAMERA.fpMinPitch : CAMERA.minPitch;
     const max = this.mode === 'subjective' ? CAMERA.fpMaxPitch : CAMERA.maxPitch;
     // tangage : souris vers le bas = regarder vers le bas, dans les deux vues
-    this.pitch = THREE.MathUtils.clamp(this.pitch - dy * CAMERA.sensitivity * (CAMERA.invertY ? -1 : 1), -max, -min);
+    this.pitch = THREE.MathUtils.clamp(this.pitch - dy * sens * (CAMERA.invertY ? -1 : 1), -max, -min);
     if (this.mode === 'troisieme' && wheel) this.distance = THREE.MathUtils.clamp(this.distance + wheel * 0.0035, CAMERA.minDistance, CAMERA.maxDistance);
   }
 
@@ -56,6 +61,13 @@ export class PlayerCamera {
 
   update(dt: number, ch: Character, world: CollisionWorld) {
     const cam = this.camera;
+    this.zoomS += (this.zoom - this.zoomS) * Math.min(1, dt * 14);
+    if (Math.abs(this.zoomS - this.zoom) < 1e-3) this.zoomS = this.zoom;
+    const fov = (CAMERA.fov + (this.mode === 'subjective' ? 6 : 0)) * this.zoomS;
+    if (Math.abs(cam.fov - fov) > 1e-3) {
+      cam.fov = fov;
+      cam.updateProjectionMatrix();
+    }
     const dir = new THREE.Vector3(Math.sin(this.yaw) * Math.cos(this.pitch), Math.sin(this.pitch), Math.cos(this.yaw) * Math.cos(this.pitch));
     if (this.mode === 'subjective') {
       ch.root.updateMatrixWorld(true);
@@ -84,7 +96,8 @@ export class PlayerCamera {
     const shoulder = this.pivot.clone().addScaledVector(right, this.shoulderS);
     // la caméra ne traverse pas les murs : on cherche le premier obstacle entre le personnage et elle
     const head = this.pivot.clone();
-    const wanted = THREE.MathUtils.lerp(this.distance, Math.min(this.distance, CAMERA.aimDistance), this.aimS);
+    const zoomed = THREE.MathUtils.clamp((1 - this.zoomS) / 0.3, 0, 1);
+    const wanted = THREE.MathUtils.lerp(THREE.MathUtils.lerp(this.distance, Math.min(this.distance, CAMERA.aimDistance), this.aimS), 1.25, zoomed * this.aimS);
     let free = wanted;
     const toShoulder = shoulder.clone().sub(head);
     for (let t = 0.1; t <= 1.0001 && !this.noCollide; t += 0.1) {

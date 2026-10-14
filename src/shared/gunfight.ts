@@ -5,8 +5,9 @@
  *  - « Chacun pour soi » : chaque élimination rapporte un point ; le premier au score visé gagne.
  *  - « Match à mort par équipe » : deux équipes (Rouge, Bleue) que les joueurs choisissent eux-mêmes au salon ;
  *    les éliminations s'additionnent pour l'équipe ; pas de tir allié.
- * Tout le monde apparaît armé (pistolet et couteau) ; après une mort, on réapparaît au bout de quelques secondes,
- * loin des adversaires. La partie s'arrête au score visé ou à la fin du temps.
+ * Tout le monde apparaît avec cinq armes (pistolet, carabine, fusil à pompe, fusil de précision, couteau), chacune
+ * avec son chargeur ; une balle dans la tête fait bien plus mal (le fusil de précision tue net). Après une mort, on
+ * réapparaît au bout de quelques secondes, loin des adversaires. La partie s'arrête au score visé ou à la fin du temps.
  */
 import type { Sex } from '../characters/catalog';
 import { PATHS, PLAZA, inPolygon, isFree } from '../village/layout';
@@ -24,15 +25,53 @@ export interface GFSettings {
   minutes: number;
 }
 
+export type GFGun = 'pistolet' | 'fusil' | 'pompe' | 'precision';
+export type GFWeapon = GFGun | 'couteau';
+export const GUNS: GFGun[] = ['pistolet', 'fusil', 'pompe', 'precision'];
+/** ordre des emplacements (touches 1 à 5) */
+export const SLOTS: GFWeapon[] = ['pistolet', 'fusil', 'pompe', 'precision', 'couteau'];
+
+export interface GunSpec {
+  name: string;
+  /** dégâts d'une balle (ou d'un plomb) au corps ; à la tête : × head */
+  damage: number;
+  head: number;
+  /** secondes entre deux tirs ; tir continu tant que le bouton est maintenu */
+  fireDelay: number;
+  auto: boolean;
+  magazine: number;
+  reload: number;
+  range: number;
+  /** plombs par cartouche */
+  pellets: number;
+  /** dispersion (rad) : à la hanche, en visée (clic droit) */
+  spread: number;
+  adsSpread: number;
+  /** champ de vision en visée (fraction du champ normal) */
+  zoom: number;
+  /** relèvement du canon à chaque tir (rad) */
+  recoil: number;
+}
+
+export const WEAPONS: Record<GFGun, GunSpec> = {
+  pistolet: { name: 'Pistolet', damage: 34, head: 2.2, fireDelay: 0.26, auto: false, magazine: 12, reload: 1.4, range: 55, pellets: 1, spread: 0.022, adsSpread: 0.003, zoom: 0.78, recoil: 0.035 },
+  fusil: { name: 'Carabine', damage: 25, head: 2, fireDelay: 0.11, auto: true, magazine: 30, reload: 2.2, range: 80, pellets: 1, spread: 0.045, adsSpread: 0.006, zoom: 0.65, recoil: 0.018 },
+  pompe: { name: 'Fusil à pompe', damage: 15, head: 1.5, fireDelay: 0.9, auto: false, magazine: 6, reload: 2.6, range: 24, pellets: 8, spread: 0.085, adsSpread: 0.06, zoom: 0.85, recoil: 0.09 },
+  precision: { name: 'Fusil de précision', damage: 85, head: 3, fireDelay: 1.3, auto: false, magazine: 5, reload: 2.8, range: 180, pellets: 1, spread: 0.07, adsSpread: 0, zoom: 0.22, recoil: 0.11 },
+};
+
+export const WEAPON_NAMES: Record<GFWeapon, string> = { ...Object.fromEntries(GUNS.map((g) => [g, WEAPONS[g].name])), couteau: 'Couteau' } as Record<GFWeapon, string>;
+
+export const isGun = (w: unknown): w is GFGun => typeof w === 'string' && (GUNS as string[]).includes(w);
+
 export const GF_RULES = {
   health: 100,
-  /** pistolet : dégâts, cadence (s entre deux tirs), chargeur, rechargement (s), portée, tolérance de visée */
-  pistolDamage: 34,
-  fireDelay: 0.32,
-  magazine: 8,
-  reloadSeconds: 1.6,
-  range: 45,
-  aimAngle: 0.4,
+  /** l'origine du rayon de visée (la caméra) doit être à moins de tant du tireur */
+  aimOrigin: 7.5,
+  /** le rayon doit partir dans la direction du corps (rad, tolérance des rotations rapides) */
+  aimAngle: 0.9,
+  /** compensation de la latence : on teste aussi les positions des cibles sur ce passé (ms) */
+  lagMs: 350,
   /** couteau : dégâts, portée, cadence */
   knifeDamage: 60,
   knifeRange: 2.3,
@@ -106,9 +145,12 @@ export interface GFPlayerState {
   alive: boolean;
   kills: number;
   deaths: number;
-  ammo: number;
-  /** fin du rechargement (horodatage serveur, 0 = pas de rechargement) */
+  /** munitions dans le chargeur de chaque arme */
+  ammo: Record<GFGun, number>;
+  /** fin du rechargement (horodatage serveur, 0 = pas de rechargement) et arme rechargée */
   reloadUntil: number;
+  reloading: GFGun | null;
+  headshots: number;
   /** réapparition prévue (horodatage serveur) */
   respawnAt: number;
   /** dernière apparition : position et numéro (le client se place quand le numéro change) */
@@ -120,7 +162,8 @@ export interface GFPlayerState {
 export interface GFKill {
   killer: string;
   victim: string;
-  weapon: 'pistolet' | 'couteau';
+  weapon: GFWeapon;
+  head: boolean;
   t: number;
 }
 
@@ -139,13 +182,83 @@ export interface GFGameView {
   result: null | { winner: string | Team | null; reason: string };
 }
 
-/** Tir vu par tous (animation, son, traçante) : d'où, vers où, touché ou non. */
+export type Vec3 = [number, number, number];
+
+/** Tir vu par tous (animation, son, traçantes) : d'où, vers où (un point par plomb), qui est touché, à la tête ou non. */
 export interface GFShot {
   by: string;
-  from: [number, number, number];
-  to: [number, number, number];
+  from: Vec3;
+  to: Vec3[];
   hit: string | null;
-  weapon: 'pistolet' | 'couteau';
+  head: boolean;
+  weapon: GFWeapon;
+}
+
+export interface GFShotResult {
+  hit: boolean;
+  killed: boolean;
+  head: boolean;
+}
+
+// ───────────────────────── zones de touche ─────────────────────────
+
+/**
+ * Silhouette de tir d'un personnage de taille h posé en (x, y, z) : la tête est une sphère, le corps une capsule
+ * verticale (du bassin au cou). Le serveur et le navigateur utilisent les mêmes mesures.
+ */
+export const HITBOX = { headRadius: 0.15, headBelowTop: 0.13, bodyRadius: 0.29, bodyBottom: 0.25, bodyTopBelowHead: 0.45 };
+
+/** Distance le long du rayon (o + t·d, d unitaire) jusqu'à la sphère, ou null. */
+function raySphere(o: Vec3, d: Vec3, c: Vec3, r: number): number | null {
+  const ox = o[0] - c[0];
+  const oy = o[1] - c[1];
+  const oz = o[2] - c[2];
+  const b = ox * d[0] + oy * d[1] + oz * d[2];
+  const q = ox * ox + oy * oy + oz * oz - r * r;
+  const disc = b * b - q;
+  if (disc < 0) return null;
+  const t = -b - Math.sqrt(disc);
+  return t >= 0 ? t : q <= 0 ? 0 : null;
+}
+
+/** Distance le long du rayon jusqu'à une capsule verticale (axe x, z, de y0 à y1, rayon r), ou null. */
+function rayCapsule(o: Vec3, d: Vec3, x: number, z: number, y0: number, y1: number, r: number): number | null {
+  let best: number | null = null;
+  // cylindre infini (dans le plan horizontal)
+  const ox = o[0] - x;
+  const oz = o[2] - z;
+  const a = d[0] * d[0] + d[2] * d[2];
+  if (a > 1e-9) {
+    const b = ox * d[0] + oz * d[2];
+    const c = ox * ox + oz * oz - r * r;
+    const disc = b * b - a * c;
+    if (disc >= 0) {
+      const t = (-b - Math.sqrt(disc)) / a;
+      const y = o[1] + t * d[1];
+      if (t >= 0 && y >= y0 && y <= y1) best = t;
+    }
+  }
+  for (const cy of [y0, y1]) {
+    const t = raySphere(o, d, [x, cy, z], r);
+    if (t !== null && (best === null || t < best)) best = t;
+  }
+  return best;
+}
+
+/** Touche d'un rayon contre une silhouette : distance et zone (la tête l'emporte si le rayon la traverse). */
+export function rayHitBody(o: Vec3, d: Vec3, p: { x: number; y: number; z: number }, h: number): { t: number; head: boolean } | null {
+  const H = HITBOX;
+  const headY = p.y + h - H.headBelowTop;
+  const th = raySphere(o, d, [p.x, headY, p.z], H.headRadius);
+  const tb = rayCapsule(o, d, p.x, p.z, p.y + H.bodyBottom, headY - H.bodyTopBelowHead + H.bodyRadius * 0.5, H.bodyRadius);
+  if (th !== null && (tb === null || th <= tb + 0.35)) return { t: th, head: true };
+  if (tb !== null) return { t: tb, head: false };
+  return null;
+}
+
+export function normalize(v: Vec3): Vec3 | null {
+  const l = Math.hypot(v[0], v[1], v[2]);
+  return l > 1e-6 && Number.isFinite(l) ? [v[0] / l, v[1] / l, v[2] / l] : null;
 }
 
 export type GFEvent = { text: string; kind: 'info' | 'mort' | 'fin'; to?: string };

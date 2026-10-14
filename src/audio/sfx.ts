@@ -120,11 +120,20 @@ export const sfx = {
   /** pistolet vide */
   dryFire: () => play((b) => tone(b, b.sfx, 'square', 1500, 1400, 0.06, 0.001, 0.03)),
   /** coup de feu localisé (Gunfight) : volume selon la distance */
-  gunshotAt: (gain: number) =>
+  /** détonation atténuée par la distance ; timbre selon l'arme (carabine sèche, pompe et précision graves et longs) */
+  gunshotAt: (gain: number, weapon: string = 'pistolet') =>
     play((b) => {
       const out = spatial(b, 0, gain);
-      noise(b, out, 'lowpass', 4000 * Math.max(0.3, gain), 0.5, 0.8, 0.001, 0.22);
-      tone(b, out, 'sine', 120, 40, 0.6, 0.002, 0.3);
+      const deep = weapon === 'pompe' || weapon === 'precision';
+      noise(b, out, 'lowpass', (weapon === 'fusil' ? 5200 : deep ? 2600 : 4000) * Math.max(0.3, gain), 0.5, 0.8, 0.001, weapon === 'fusil' ? 0.12 : deep ? 0.4 : 0.22);
+      tone(b, out, 'sine', deep ? 90 : 120, 35, deep ? 0.8 : 0.6, 0.002, deep ? 0.5 : weapon === 'fusil' ? 0.18 : 0.3);
+      if (weapon === 'precision') noise(b, out, 'bandpass', 900, 0.7, 0.25 * gain, 0.05, 0.9);
+    }),
+  /** balle dans la tête : tintement métallique net */
+  headshot: () =>
+    play((b) => {
+      tone(b, b.sfx, 'triangle', 2400, 2300, 0.12, 0.001, 0.18);
+      tone(b, b.sfx, 'sine', 3600, 3500, 0.06, 0.001, 0.12);
     }),
   /** cloche de l'église : partiels inharmoniques, longue résonance */
   bell: () =>

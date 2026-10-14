@@ -1,16 +1,26 @@
 /**
  * Interface du mode Gunfight : écran du menu principal (créer une salle, rejoindre avec un code, solo contre des
  * robots), salle d'attente (réglages de l'hôte, équipes au choix des joueurs, code à partager), interface de
- * combat (vie, munitions, score, temps, fil des éliminations, viseur, marqueur de touche, écran de mort,
- * tableau des scores sur Tab) et résultats.
+ * combat (vie, armes et munitions, score, temps, fil des éliminations, viseur qui s'ouvre avec la dispersion,
+ * marqueur de touche et de tir à la tête, lunette, écran de mort, tableau des scores sur Tab) et résultats.
  */
 import type { Sex } from '../characters/catalog';
-import { GF_DEFAULT, GF_MODE_NAMES, GF_RULES, TEAM_NAMES, type GFGameView, type GFLobbyView, type GFMode, type GFSettings, type Team } from '../shared/gunfight';
+import { GF_DEFAULT, GF_MODE_NAMES, GF_RULES, SLOTS, TEAM_NAMES, WEAPONS, WEAPON_NAMES, isGun, type GFWeapon, type GFGameView, type GFLobbyView, type GFMode, type GFSettings, type Team } from '../shared/gunfight';
 import { STATIC, OFFLINE_MESSAGE } from '../client/net';
 import { sfx } from '../audio/sfx';
 import { esc, h, onClick } from './dom';
 import { ICON } from './icons';
 import { profile } from './profile';
+
+const wsvg = (d: string) => `<svg class="ic gf-wic" viewBox="0 0 48 16" aria-hidden="true"><path d="${d}" fill="currentColor"/></svg>`;
+/** silhouettes des armes (fil des éliminations, barre d'armes) */
+export const WEAPON_ICON: Record<GFWeapon, string> = {
+  pistolet: wsvg('M14 3h20v4H22l-1 2h-3l-1 6h-5l2-8h0z'),
+  fusil: wsvg('M2 6l8-1h28v3H24l-2 5h-4l1-4h-3l-1 4h-3l1-4H8L4 11H2z'),
+  pompe: wsvg('M2 6l9-1h35v2H12v2h20v2H14l-2 3H8l2-4H6l-3 3H2z'),
+  precision: wsvg('M2 6l8-1h8V2h12v3h18v2H20v2l-3 4h-3l2-4H8l-4 3H2z'),
+  couteau: wsvg('M4 7h12l2-2h26l-6 4H18l-2 2H4z'),
+};
 
 export interface GFMenuHooks {
   create(name: string, sex: Sex, settings: GFSettings): Promise<unknown>;
@@ -276,13 +286,16 @@ export class GFHud {
     this.el = h(`<div class="gf-hud">
       <div class="gf-top"><div class="gf-score"></div><div class="gf-time"></div></div>
       <ol class="gf-feed" aria-live="polite"></ol>
-      <div class="gf-cross" aria-hidden="true"><i></i></div>
+      <div class="gf-scope" aria-hidden="true"><i></i></div>
+      <div class="gf-cross" aria-hidden="true"><span class="l"></span><span class="r"></span><span class="t"></span><span class="b"></span><i></i></div>
+      <div class="gf-headshot" aria-hidden="true">Tête !</div>
       <div class="gf-dmg" aria-hidden="true"></div>
       <div class="gf-health"><span class="gf-hp-n"></span><div class="gf-hp"><i></i></div></div>
       <div class="gf-ammo"></div>
+      <ol class="gf-slots"></ol>
       <div class="gf-dead"><div><h2>Éliminé</h2><p class="gf-by"></p><p class="gf-respawn"></p></div></div>
       <div class="gf-board" hidden></div>
-      <div class="controls-help"><span><kbd>Clic</kbd> tirer / frapper</span><span><kbd>R</kbd> recharger</span><span><kbd>1</kbd> pistolet</span><span><kbd>2</kbd> couteau</span><span><kbd>Tab</kbd> scores</span><span><kbd>Échap</kbd> menu</span></div>
+      <div class="controls-help"><span><kbd>Clic</kbd> tirer / frapper</span><span><kbd>Clic droit</kbd> viser</span><span><kbd>R</kbd> recharger</span><span><kbd>1</kbd>…<kbd>5</kbd> / molette : armes</span><span><kbd>Tab</kbd> scores</span><span><kbd>Échap</kbd> menu</span></div>
     </div>`);
     window.addEventListener('keydown', (e) => {
       if (e.code === 'Tab' && this.el.classList.contains('open')) {
@@ -295,13 +308,21 @@ export class GFHud {
     });
   }
 
-  hitMarker(killed: boolean) {
+  hitMarker(killed: boolean, head = false) {
     const c = this.el.querySelector('.gf-cross') as HTMLElement;
-    c.classList.remove('hit', 'kill');
+    c.classList.remove('hit', 'kill', 'head');
     void c.offsetWidth;
     c.classList.add(killed ? 'kill' : 'hit');
+    if (head) c.classList.add('head');
     clearTimeout(this.hitTimer);
-    this.hitTimer = window.setTimeout(() => c.classList.remove('hit', 'kill'), 260);
+    this.hitTimer = window.setTimeout(() => c.classList.remove('hit', 'kill', 'head'), head ? 420 : 260);
+    if (head) {
+      const hs = this.el.querySelector('.gf-headshot') as HTMLElement;
+      hs.textContent = killed ? 'Tête ! Éliminé' : 'Tête !';
+      hs.classList.remove('on');
+      void hs.offsetWidth;
+      hs.classList.add('on');
+    }
   }
 
   damaged() {
@@ -313,7 +334,8 @@ export class GFHud {
     this.dmgTimer = window.setTimeout(() => d.classList.remove('on'), 500);
   }
 
-  render(G: GFGameView, me: string, now: number, item: 'pistolet' | 'couteau') {
+  /** `spreadPx` : rayon du cône de dispersion à l'écran (le viseur s'ouvre d'autant) */
+  render(G: GFGameView, me: string, now: number, item: GFWeapon, spreadPx = 8, scoped = false) {
     const st = G.players[me];
     const name = this.names;
     const teamOf = (id: string) => G.teams[id];
@@ -333,7 +355,7 @@ export class GFHud {
     this.el.querySelector('.gf-feed')!.innerHTML = G.feed
       .filter((k) => now - k.t < 8000)
       .reverse()
-      .map((k) => `<li><b class="${cls(k.killer)}">${esc(name(k.killer))}</b> <span class="gf-w">${k.weapon === 'couteau' ? ICON.dague : ICON.balle}</span> <b class="${cls(k.victim)}">${esc(name(k.victim))}</b></li>`)
+      .map((k) => `<li><b class="${cls(k.killer)}">${esc(name(k.killer))}</b> <span class="gf-w" title="${esc(WEAPON_NAMES[k.weapon] ?? '')}">${WEAPON_ICON[k.weapon] ?? ICON.balle}${k.head ? `<span class="gf-hs" title="Tir à la tête">${ICON.crane}</span>` : ''}</span> <b class="${cls(k.victim)}">${esc(name(k.victim))}</b></li>`)
       .join('');
     // vie, munitions
     const hp = st?.hp ?? 0;
@@ -342,16 +364,28 @@ export class GFHud {
     bar.style.transform = `scaleX(${hp / GF_RULES.health})`;
     this.el.querySelector('.gf-health')!.classList.toggle('low', hp <= 34);
     const reloading = !!st?.reloadUntil && st.reloadUntil > now;
-    this.el.querySelector('.gf-ammo')!.innerHTML =
-      item === 'couteau'
-        ? `${ICON.dague}<span>Couteau</span>`
-        : `${ICON.balle}<span><b>${reloading ? '…' : st?.ammo ?? 0}</b> / ${GF_RULES.magazine}</span><small>${reloading ? 'Rechargement' : (st?.ammo ?? 0) === 0 ? 'R : recharger' : 'Pistolet'}</small>`;
+    const ammo = this.el.querySelector('.gf-ammo')!;
+    if (!isGun(item)) ammo.innerHTML = `${ICON.dague}<span>Couteau</span><small>Corps à corps</small>`;
+    else {
+      const n = st?.ammo[item] ?? 0;
+      const busy = reloading && st?.reloading === item;
+      ammo.innerHTML = `${ICON.balle}<span><b>${busy ? '…' : n}</b> / ${WEAPONS[item].magazine}</span><small>${busy ? 'Rechargement' : n === 0 ? 'R : recharger' : esc(WEAPONS[item].name)}</small>`;
+    }
+    this.el.querySelector('.gf-slots')!.innerHTML = SLOTS.map(
+      (w, i) =>
+        `<li class="${w === item ? 'on' : ''}${isGun(w) && st && st.ammo[w] === 0 ? ' empty' : ''}"><kbd>${i + 1}</kbd>${WEAPON_ICON[w]}<span>${esc(WEAPON_NAMES[w])}</span>${isGun(w) ? `<small>${st?.ammo[w] ?? 0}</small>` : ''}</li>`,
+    ).join('');
+    // viseur : s'ouvre avec la dispersion ; lunette du fusil de précision
+    const cross = this.el.querySelector('.gf-cross') as HTMLElement;
+    cross.style.setProperty('--gap', `${Math.round(Math.min(80, Math.max(3, spreadPx)))}px`);
+    cross.classList.toggle('knife', !isGun(item));
+    this.el.classList.toggle('scoped', scoped);
     // mort
     const dead = this.el.querySelector('.gf-dead') as HTMLElement;
     dead.classList.toggle('open', !!st && !st.alive && G.phase === 'jeu');
     if (st && !st.alive) {
       const k = [...G.feed].reverse().find((x) => x.victim === me);
-      this.el.querySelector('.gf-by')!.textContent = k ? `par ${name(k.killer)} (${k.weapon})` : '';
+      this.el.querySelector('.gf-by')!.textContent = k ? `par ${name(k.killer)} (${(WEAPON_NAMES[k.weapon] ?? k.weapon).toLowerCase()}${k.head ? ', tir à la tête' : ''})` : '';
       this.el.querySelector('.gf-respawn')!.textContent = `Réapparition dans ${Math.max(0, Math.ceil((st.respawnAt - now) / 1000))} s`;
     }
     // tableau des scores (Tab)
@@ -366,9 +400,9 @@ export function scoreboard(G: GFGameView, me: string, name: (id: string) => stri
   const rows = (ids: string[]) =>
     ids
       .sort((a, b) => G.players[b].kills - G.players[a].kills || G.players[a].deaths - G.players[b].deaths)
-      .map((id) => `<tr class="${id === me ? 'me' : ''}"><td>${esc(name(id))}${id === me ? ' <em>(vous)</em>' : ''}</td><td>${G.players[id].kills}</td><td>${G.players[id].deaths}</td></tr>`)
+      .map((id) => `<tr class="${id === me ? 'me' : ''}"><td>${esc(name(id))}${id === me ? ' <em>(vous)</em>' : ''}</td><td>${G.players[id].kills}</td><td>${G.players[id].headshots ?? 0}</td><td>${G.players[id].deaths}</td></tr>`)
       .join('');
-  const head = '<tr><th>Joueur</th><th>Élim.</th><th>Morts</th></tr>';
+  const head = '<tr><th>Joueur</th><th>Élim.</th><th title="Éliminations par tir à la tête">Tête</th><th>Morts</th></tr>';
   const ids = Object.keys(G.players);
   if (G.settings.mode === 'equipes')
     return `<div class="gf-teams">${(['rouge', 'bleu'] as Team[])

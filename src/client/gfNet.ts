@@ -5,7 +5,7 @@
  */
 import type { Sex } from '../characters/catalog';
 import type { PlayerPose } from '../shared/protocol';
-import type { GFEvent, GFGameView, GFLobbyView, GFSettings, GFShot, Team } from '../shared/gunfight';
+import type { GFEvent, GFGameView, GFGun, GFLobbyView, GFSettings, GFShot, GFShotResult, Team, Vec3 } from '../shared/gunfight';
 import { GunfightRoom } from '../shared/gunfightRoom';
 import { net } from './net';
 
@@ -53,9 +53,9 @@ export abstract class GFClient {
   abstract backToLobby(): Promise<unknown>;
   abstract leave(): void;
   abstract sendPose(p: PlayerPose): void;
-  abstract shoot(target: string | null, aim: [number, number, number]): Promise<{ hit: boolean; killed: boolean }>;
-  abstract stab(target: string): Promise<{ hit: boolean; killed: boolean }>;
-  abstract reload(): Promise<unknown>;
+  abstract shoot(weapon: GFGun, origin: Vec3, dirs: Vec3[], ends: Vec3[]): Promise<GFShotResult>;
+  abstract stab(target: string): Promise<GFShotResult>;
+  abstract reload(weapon: GFGun): Promise<unknown>;
 }
 
 /** Partie en ligne (serveur). */
@@ -122,14 +122,14 @@ export class SocketGF extends GFClient {
   sendPose(p: PlayerPose) {
     if (net.socket.connected) net.socket.emit('gf:pose', p);
   }
-  shoot(target: string | null, aim: [number, number, number]) {
-    return this.call<{ hit: boolean; killed: boolean }>('gf:tir', { target, aim });
+  shoot(weapon: GFGun, origin: Vec3, dirs: Vec3[], ends: Vec3[]) {
+    return this.call<GFShotResult>('gf:tir', { weapon, origin, dirs, ends });
   }
   stab(target: string) {
-    return this.call<{ hit: boolean; killed: boolean }>('gf:couteau', { target });
+    return this.call<GFShotResult>('gf:couteau', { target });
   }
-  reload() {
-    return this.call('gf:recharger', {});
+  reload(weapon: GFGun) {
+    return this.call('gf:recharger', { weapon });
   }
 }
 
@@ -218,13 +218,13 @@ export class LocalGF extends GFClient {
       return Promise.reject(e);
     }
   }
-  shoot(target: string | null, aim: [number, number, number]) {
-    return this.wrap(() => this.room.shoot(this.me, target, aim));
+  shoot(weapon: GFGun, origin: Vec3, dirs: Vec3[], ends: Vec3[]) {
+    return this.wrap(() => this.room.shoot(this.me, weapon, origin, dirs, ends));
   }
   stab(target: string) {
     return this.wrap(() => this.room.stab(this.me, target));
   }
-  reload() {
-    return this.wrap(() => this.room.reload(this.me));
+  reload(weapon: GFGun) {
+    return this.wrap(() => this.room.reload(this.me, weapon));
   }
 }

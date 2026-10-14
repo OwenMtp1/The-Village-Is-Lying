@@ -1,7 +1,8 @@
 /**
  * Mode Gunfight dans le navigateur :
- *  1. solo contre 3 robots (chacun pour soi) : la partie démarre, les robots se déplacent et tirent, le joueur
- *     vise un robot et l'abat (3 balles), interface de combat et tableau des scores ;
+ *  1. solo contre 3 robots (chacun pour soi) : la partie démarre, les robots (armés au hasard) se déplacent et
+ *     tirent, le joueur vise la tête d'un robot puis son corps, interface de combat et tableau des scores ;
+ *     gros plans du personnage tenant chaque arme (prise à deux mains, canon dans l'axe du viseur) ;
  *  2. en ligne, match à mort par équipe : salle créée par la page, 3 robots Socket.IO rejoignent, choix des
  *     équipes, lancement, un adversaire tire sur l'hôte (dégâts), un allié ne peut pas.
  * Captures dans screenshots/gunfight/.
@@ -67,21 +68,28 @@ const res = await ev<string>(`(async () => {
   await new Promise((r) => setTimeout(r, 4000));
   const hpAfter = c.game.players[c.me].hp;
   const out = ['vie du joueur ' + hp0 + '→' + hpAfter + ' (le robot a tiré)'];
-  for (let k = 0; k < 4; k++) {
-    if (!c.game.players[bid].alive) { out.push('robot abattu'); break; }
+  // viser la tête puis la poitrine du robot depuis la caméra (épaule) : quelques itérations, la caméra dépend du regard
+  const aimAt = async (dy) => {
     place();
-    // viser la poitrine du robot depuis la caméra (épaule) : quelques itérations, la caméra dépend du regard
-    for (let it = 0; it < 4; it++) {
+    for (let it = 0; it < 5; it++) {
       G.update(1 / 60);
       const cam = G.cam.camera.position; const t = bot.ch.root.position;
       G.cam.yaw = Math.atan2(t.x - cam.x, t.z - cam.z);
-      G.cam.pitch = Math.atan2(t.y + 1.2 - cam.y, Math.hypot(t.x - cam.x, t.z - cam.z));
+      G.cam.pitch = Math.atan2(t.y + dy - cam.y, Math.hypot(t.x - cam.x, t.z - cam.z));
     }
     G.update(1 / 60);
+    G.cam.update(0, G.player, w);
+    G.spread = 0;
     const before = c.game.players[bid].hp;
-    G['attack']();
+    G['nextFire'] = 0;
+    G['attack'](performance.now() / 1000);
     await new Promise((r) => setTimeout(r, 450));
-    out.push(before + '→' + c.game.players[bid].hp);
+    return before + '→' + c.game.players[bid].hp + (c.game.feed.at(-1)?.head ? ' (tête)' : '');
+  };
+  out.push('tête : ' + await aimAt(bot.ch.height - 0.13));
+  for (let k = 0; k < 3; k++) {
+    if (!c.game.players[bid].alive) { out.push('robot abattu'); break; }
+    out.push('corps : ' + await aimAt(1.15));
   }
   return out.join(' | ');
 })()`);
@@ -89,6 +97,28 @@ console.log('tirs du joueur sur un robot (vie) :', res);
 await ev(`clearInterval(window.__tick)`);
 await ev(`window.__village.gfCtl.render()`);
 await shot('02-solo-combat');
+// gros plans : le joueur tient chaque arme, vu de côté et de trois quarts avant
+for (const w of ['pistolet', 'fusil', 'pompe', 'precision']) {
+  await ev(`(() => {
+    const V = window.__village; const G = V.gfGame; const c = V.gfCtl.client;
+    c.room['state'].get(c.me).alive = true;
+    G.item = '${w}';
+    G.cam.pitch = 0.05;
+    for (let i = 0; i < 10; i++) G.update(1 / 30);
+    const p = G.player.root.position; const yaw = G.player.yaw;
+    const cam = G.cam.camera;
+    // trois quarts avant droit, à hauteur d'épaule
+    const a = yaw - 1.0;
+    cam.position.set(p.x + Math.sin(a) * 1.7, p.y + 1.45, p.z + Math.cos(a) * 1.7);
+    cam.lookAt(p.x + Math.sin(yaw) * 0.35, p.y + 1.3, p.z + Math.cos(yaw) * 0.35);
+    G.player.root.visible = true;
+    V.view.paused = true; V.view.renderFrame();
+  })()`);
+  writeFileSync(`${OUT}/06-prise-${w}.png`, await page.screenshot({ timeout: 120_000 }));
+}
+// vue de jeu, visée épaulée au fusil
+await ev(`(() => { const G = window.__village.gfGame; G.item = 'fusil'; for (let i = 0; i < 10; i++) G.update(1 / 30); })()`);
+await shot('07-vue-fusil');
 await page.keyboard.down('Tab');
 await ev(`window.__village.gfCtl.render()`);
 await shot('03-solo-scores');
@@ -138,8 +168,13 @@ const walkTo = async (b: Socket, id: string, x: number, z: number, yaw: number) 
 };
 await Promise.all([walkTo(bots[1], ids[1], H.x, H.z + 6, Math.PI), walkTo(bots[0], ids[0], H.x + 1.5, H.z - 6, 0)]);
 await wait(1600);
-console.log('tir adverse :', JSON.stringify(await call(bots[1], 'gf:tir', { target: me })));
-console.log('tir allié :', JSON.stringify(await call(bots[0], 'gf:tir', { target: me })));
+const shootAt = (b: number, from: { x: number; z: number }) => {
+  const d = [H.x - from.x, groundY + 1.1 - (groundY + 1.5), H.z - from.z];
+  const l = Math.hypot(d[0], d[1], d[2]);
+  return call(bots[b], 'gf:tir', { weapon: 'pistolet', origin: [from.x, groundY + 1.5, from.z], dirs: [d.map((v) => v / l)] });
+};
+console.log('tir adverse :', JSON.stringify(await shootAt(1, { x: H.x, z: H.z + 6 })));
+console.log('tir allié :', JSON.stringify(await shootAt(0, { x: H.x + 1.5, z: H.z - 6 })));
 await wait(800);
 console.log('vie de l’hôte :', await ev(`window.__village.gfCtl.client.game.players[window.__village.gfCtl.client.me].hp`));
 await ev(`window.__village.gfCtl.render()`);
