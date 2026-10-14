@@ -26,8 +26,22 @@ export interface GameServer {
 export function createGameServer(opts: { staticDir?: string; random?: () => number } = {}): GameServer {
   const app = express();
   if (opts.staticDir && existsSync(opts.staticDir)) {
-    app.use(express.static(opts.staticDir, { maxAge: '1h', index: 'index.html' }));
-    app.get('*', (_req, res) => res.sendFile(join(opts.staticDir!, 'index.html')));
+    // la page (index.html) est toujours revérifiée : après un déploiement, le navigateur charge la nouvelle version
+    // tout de suite ; les fichiers compilés portent une empreinte dans leur nom et se gardent longtemps
+    app.use(
+      express.static(opts.staticDir, {
+        index: 'index.html',
+        setHeaders: (res, path) => {
+          if (path.endsWith('.html')) res.setHeader('Cache-Control', 'no-cache');
+          else if (/[\\/]assets[\\/]/.test(path)) res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
+          else res.setHeader('Cache-Control', 'public, max-age=3600');
+        },
+      }),
+    );
+    app.get('*', (_req, res) => {
+      res.setHeader('Cache-Control', 'no-cache');
+      res.sendFile(join(opts.staticDir!, 'index.html'));
+    });
   }
   const http = createServer(app);
   const io = new Server<ClientToServer, ServerToClient>(http, { cors: { origin: true }, maxHttpBufferSize: 16_000 });
