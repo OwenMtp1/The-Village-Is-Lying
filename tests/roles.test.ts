@@ -6,10 +6,8 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { PRESETS, compositionErrors, startBlocker, totalOf, type Composition, type Role } from '../src/shared/roles';
 import { RULES, assignRoles, winnerOf } from '../src/shared/rules';
-import { Room, RoomError, type RoomOutput } from '../src/server/room';
-import type { PrivateInfo } from '../src/shared/protocol';
-
-const C = (tueur: number, sherif: number, detective: number, villageois: number): Composition => ({ tueur, sherif, detective, villageois });
+import { Room, RoomError } from '../src/server/room';
+import { C, Recorder, gather, place, setup } from './helpers';
 
 test('compositions valides : 4 à 10 joueurs, plusieurs rôles spéciaux', () => {
   for (const c of [C(1, 0, 0, 3), C(1, 1, 1, 3), C(2, 1, 1, 4), C(2, 2, 2, 2), C(3, 2, 2, 3), ...PRESETS.map((p) => p.composition)]) assert.deepEqual(compositionErrors(c), [], JSON.stringify(c));
@@ -63,42 +61,8 @@ test('victoire calculée sur les vivants, plusieurs tueurs', () => {
 
 // ───────────────────────── salon et partie (serveur, sans réseau) ─────────────────────────
 
-class Recorder implements RoomOutput {
-  lobbies: ReturnType<Room['lobbyView']>[] = [];
-  games: ReturnType<Room['gameView']>[] = [];
-  secrets = new Map<string, PrivateInfo>();
-  events: string[] = [];
-  lobby(v: ReturnType<Room['lobbyView']>) {
-    this.lobbies.push(v);
-  }
-  game(v: ReturnType<Room['gameView']>) {
-    this.games.push(v);
-  }
-  secret(id: string, info: PrivateInfo) {
-    this.secrets.set(id, info);
-  }
-  event(text: string) {
-    this.events.push(text);
-  }
-}
-
-function setup(comp: Composition, n = totalOf(comp)) {
-  const out = new Recorder();
-  let t = 1_000_000;
-  const clock = { now: () => t, advance: (s: number) => (t += s * 1000) };
-  const room = new Room('ABCD', comp, out, clock.now);
-  const ids = Array.from({ length: n }, (_, i) => room.join(`J${i}`, i % 2 ? 'F' : 'M').id);
-  return { room, out, ids, clock };
-}
-
-/** Tout le monde marche jusqu'au même endroit (3 s : vitesse plausible, portées respectées). */
-function gather(room: Room, ids: string[], clock?: { advance(s: number): void }) {
-  clock?.advance(3);
-  for (const id of ids) room.pose(id, { x: 0, y: 0, z: 0, yaw: 0, speed: 0, grounded: true, vy: 0, dir: 1, torch: false, pitch: 0 });
-}
-
 test('salon : places = somme des rôles, salon complet, lancement seulement au complet', () => {
-  const { room, ids } = setup(C(1, 1, 1, 5), 6);
+  const { room, ids } = setup(C(1, 1, 1, 5), { n: 6 });
   const v = room.lobbyView();
   assert.equal(v.seats, 8);
   assert.equal(v.players.length, 6);
@@ -114,7 +78,7 @@ test('salon : places = somme des rôles, salon complet, lancement seulement au c
 });
 
 test('salon : composition refusée par le serveur si invalide ou trop petite pour les présents', () => {
-  const { room, ids } = setup(C(1, 1, 1, 5), 7);
+  const { room, ids } = setup(C(1, 1, 1, 5), { n: 7 });
   assert.throws(() => room.setComposition(ids[0], C(0, 1, 1, 6)), /au moins un tueur/);
   assert.throws(() => room.setComposition(ids[0], C(1, 1, 1, 3)), /7 joueurs sont déjà dans le salon/);
   assert.throws(() => room.setComposition(ids[0], { tueur: 1, sherif: 1, detective: 1 } as unknown as Composition), RoomError);
@@ -125,7 +89,7 @@ test('salon : composition refusée par le serveur si invalide ou trop petite pou
 });
 
 test('salon : l’hôte part avant le lancement, le plus ancien prend la main', () => {
-  const { room, ids } = setup(C(1, 1, 1, 3), 4);
+  const { room, ids } = setup(C(1, 1, 1, 3), { n: 4 });
   room.leave(ids[0], true);
   assert.equal(room.hostId, ids[1]);
   assert.equal(room.lobbyView().players.find((p) => p.host)?.id, ids[1]);
@@ -169,10 +133,10 @@ test('tueurs : délais individuels, pas de double élimination, pas entre tueurs
   assert.ok(!room.isAlive(victims[0]) && !room.isAlive(victims[1]));
   assert.equal(out.secrets.get(killers[0])!.killReadyAt > clock.now(), true);
   // portée
-  room.pose(victims[2], { x: 0, y: 0, z: 0.3, yaw: 0, speed: 0, grounded: true, vy: 0, dir: 1, torch: false, pitch: 0 });
+  place(room, victims[2], 0, 0.3);
   clock.advance(RULES.killCooldown + 1);
-  room.pose(killers[0], { x: 3, y: 0, z: 0, yaw: 0, speed: 0, grounded: true, vy: 0, dir: 1, torch: false, pitch: 0 });
-  room.pose(victims[3], { x: 8, y: 0, z: 0, yaw: 0, speed: 0, grounded: true, vy: 0, dir: 1, torch: false, pitch: 0 });
+  place(room, killers[0], 3, 0, 0, [8, 0]);
+  place(room, victims[3], 8, 0);
   assert.throws(() => room.eliminate(killers[0], victims[3]), /Trop loin/);
 });
 
@@ -184,8 +148,10 @@ test('8 joueurs, 2 tueurs : un tueur abattu ne suffit pas, le second fait perdre
   const sheriffs = ids.filter((i) => room.roleOf(i) === 'sherif');
   room.shoot(sheriffs[0], killers[0]);
   assert.equal(room.gameView().result, null, 'la partie continue tant qu’un tueur vit');
-  assert.throws(() => room.shoot(sheriffs[0], killers[1]), /plus de balle/, 'balle individuelle épuisée');
-  room.shoot(sheriffs[1], killers[1]); // le second shérif a toujours sa balle
+  // le premier shérif vide son chargeur dans le vide : chaque balle compte, puis plus rien
+  for (let i = 1; i < RULES.sheriffAmmo; i++) assert.deepEqual(room.shoot(sheriffs[0], null), { hit: false });
+  assert.throws(() => room.shoot(sheriffs[0], killers[1]), /plus de balle/, 'balles individuelles épuisées');
+  room.shoot(sheriffs[1], killers[1]); // le second shérif a toujours les siennes
   const v = room.gameView();
   assert.equal(v.result?.winner, 'innocents');
   assert.equal(Object.keys(v.result!.roles).length, 8, 'tous les rôles révélés à la fin');

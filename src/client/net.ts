@@ -3,7 +3,7 @@
  * Le jeton de reconnexion est gardé pour l'onglet : une page rechargée retrouve sa place dans la partie.
  */
 import { io, type Socket } from 'socket.io-client';
-import type { ClientToServer, GameEvent, GameView, LobbyView, PlayerPose, PrivateInfo, ServerToClient } from '../shared/protocol';
+import type { ClientToServer, GameEvent, GameView, Gesture, LobbyView, PlayerPose, PrivateInfo, ServerToClient } from '../shared/protocol';
 import type { Composition } from '../shared/roles';
 import type { Sex } from '../characters/catalog';
 
@@ -28,6 +28,7 @@ class Net {
   failed = false;
   private listeners = new Set<Listener>();
   onEvent: (e: GameEvent) => void = () => {};
+  onGesture: (g: Gesture) => void = () => {};
 
   constructor() {
     this.socket = io({ autoConnect: false, transports: ['websocket', 'polling'] });
@@ -67,6 +68,7 @@ class Net {
       this.posesAt = performance.now();
     });
     this.socket.on('jeu:evenement', (e) => this.onEvent(e));
+    this.socket.on('jeu:geste', (g) => this.onGesture(g));
   }
 
   subscribe(fn: Listener) {
@@ -164,8 +166,8 @@ class Net {
   eliminate(target: string) {
     return this.call('jeu:eliminer', { target });
   }
-  shoot(target: string) {
-    return this.call('jeu:tirer', { target });
+  shoot(target: string | null) {
+    return this.call<{ hit: boolean }>('jeu:tirer', { target });
   }
   investigate(target: string) {
     return this.call<{ killer: boolean }>('jeu:enqueter', { target });

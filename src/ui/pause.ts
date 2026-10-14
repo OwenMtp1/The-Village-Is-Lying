@@ -38,13 +38,14 @@ export class PauseMenu {
             <dt><kbd>Espace</kbd></dt><dd>sauter</dd>
             <dt>Souris (clic dans la scène)</dt><dd>diriger la caméra · molette : distance</dd>
             <dt><kbd>V</kbd></dt><dd>vue subjective / derrière l’épaule</dd>
-            <dt><kbd>L</kbd></dt><dd>allumer ou éteindre la lampe de poche</dd>
-            <dt><kbd>E</kbd></dt><dd>tueur : éliminer la personne proche</dd>
-            <dt><kbd>F</kbd></dt><dd>shérif : tirer sur la personne visée</dd>
+            <dt><kbd>1</kbd> / <kbd>L</kbd></dt><dd>lampe de poche</dd>
+            <dt><kbd>2</kbd></dt><dd>sortir / ranger son arme (couteau du tueur, pistolet du shérif)</dd>
+            <dt>Clic gauche</dt><dd>arme en main : frapper au couteau, ou tirer là où vise le viseur</dd>
             <dt><kbd>R</kbd></dt><dd>détective : enquêter sur la personne proche</dd>
             <dt><kbd>T</kbd></dt><dd>signaler un corps</dd>
             <dt><kbd>U</kbd></dt><dd>réunion d’urgence (une par joueur)</dd>
             <dt><kbd>J</kbd></dt><dd>journal d’enquête</dd>
+            <dt><kbd>N</kbd></dt><dd>exploration solo : vol libre à travers les murs</dd>
             <dt><kbd>Échap</kbd></dt><dd>libérer la souris, puis ce menu</dd>
           </dl>
         </div>

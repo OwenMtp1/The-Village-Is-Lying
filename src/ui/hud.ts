@@ -13,6 +13,9 @@ import { sfx } from '../audio/sfx';
 import { esc, h, onClick } from './dom';
 import { ICON, ROLE_ICON } from './icons';
 
+/** Nom lisible d'une touche (KeyE → E, Digit2 → 2, Mouse0 → Clic). */
+export const keyName = (code: string) => (code === 'Mouse0' ? 'Clic' : code.replace(/^Key|^Digit/, ''));
+
 const portrait = (appearance: string | undefined) => (appearance ? `<img class="portrait" src="${cardUrl(appearance)}" alt="" loading="lazy">` : '<span class="portrait none"></span>');
 
 export class OnlineHud {
@@ -30,7 +33,7 @@ export class OnlineHud {
       <button type="button" class="hud-btn journal-btn" title="Journal d'enquête (J)">${ICON.livre}<span>Journal</span><kbd>J</kbd></button>
       <div class="prompts" aria-live="polite"></div>
       <div class="controls-help">
-        <span><kbd>Z Q S D</kbd> marcher</span><span><kbd>Maj</kbd> courir</span><span><kbd>Espace</kbd> sauter</span><span><kbd>V</kbd> vue subjective</span><span><kbd>L</kbd> lampe</span><span><kbd>J</kbd> journal</span><span><kbd>Échap</kbd> menu</span>
+        <span><kbd>Z Q S D</kbd> marcher</span><span><kbd>Maj</kbd> courir</span><span><kbd>Espace</kbd> sauter</span><span><kbd>V</kbd> vue subjective</span><span><kbd>L</kbd> lampe</span><span><kbd>2</kbd> arme</span><span><kbd>J</kbd> journal</span><span><kbd>Échap</kbd> menu</span>
       </div>
       <section class="journal" aria-label="Journal d'enquête" hidden></section>
       <section class="meeting" role="dialog" aria-label="Réunion du village"></section>
@@ -64,10 +67,30 @@ export class OnlineHud {
     this.wasAlive = alive;
     this.el.classList.toggle('dead', !alive);
     this.renderRole(G, S, now, alive);
-    const pr = this.el.querySelector('.prompts') as HTMLElement;
-    pr.innerHTML = prompts.map((p) => `<div class="prompt${p.waiting ? ' waiting' : ''}"><kbd>${p.key.replace('Key', '')}</kbd><span>${esc(p.label)}</span></div>`).join('');
+    this.renderPrompts(prompts);
     if (this.journalOpen) this.renderJournal(G, S);
     this.renderMeeting(G, now, alive);
+  }
+
+  /**
+   * Actions possibles : une ligne par touche, mise à jour sur place (texte, état) — aucune ligne n'est recréée
+   * tant que l'action reste disponible, donc pas de clignotement quand le compte à rebours change.
+   */
+  private renderPrompts(prompts: Prompt[]) {
+    const pr = this.el.querySelector('.prompts') as HTMLElement;
+    const keep = new Set(prompts.map((p) => p.key));
+    for (const el of [...pr.children] as HTMLElement[]) if (!keep.has(el.dataset.key!)) el.remove();
+    prompts.forEach((p, i) => {
+      let el = pr.querySelector<HTMLElement>(`[data-key="${p.key}"]`);
+      if (!el) {
+        el = h(`<div class="prompt" data-key="${p.key}"><kbd></kbd><span></span></div>`);
+        el.querySelector('kbd')!.textContent = keyName(p.key);
+      }
+      if (pr.children[i] !== el) pr.insertBefore(el, pr.children[i] ?? null);
+      const span = el.querySelector('span')!;
+      if (span.textContent !== p.label) span.textContent = p.label;
+      el.classList.toggle('waiting', !!p.waiting);
+    });
   }
 
   private renderRole(G: GameView, S: PrivateInfo | null, now: number, alive: boolean) {
@@ -80,10 +103,10 @@ export class OnlineHud {
     const lines: string[] = [];
     if (S.role === 'tueur') {
       const wait = Math.ceil((S.killReadyAt - now) / 1000);
-      lines.push(wait > 0 ? `${ICON.sablier}<span>Élimination possible dans <b>${wait} s</b></span>` : `${ICON.dague}<span>Élimination <b>prête</b></span>`);
+      lines.push(wait > 0 ? `${ICON.sablier}<span>Couteau : prêt dans <b>${wait} s</b></span>` : `${ICON.dague}<span>Couteau <b>prêt</b> — <kbd>2</kbd> le sortir, clic pour frapper</span>`);
       lines.push(`${ICON.info}<span>${S.allies.length ? `Complices : ${S.allies.map((a) => esc(net.nameOf(a))).join(', ')}` : 'Vous êtes le seul tueur.'}</span>`);
     }
-    if (S.role === 'sherif') lines.push(`${ICON.balle}<span>${S.ammo > 0 ? `Balle : <b>${S.ammo}</b>` : 'Plus aucune balle'}</span>`);
+    if (S.role === 'sherif') lines.push(`${ICON.balle}<span>${S.ammo > 0 ? `Pistolet : <b>${S.ammo}</b> balle${S.ammo > 1 ? 's' : ''} — <kbd>2</kbd> le sortir, clic pour tirer` : 'Plus aucune balle'}</span>`);
     if (S.role === 'detective') lines.push(`${ICON.loupe}<span>${S.investigations > 0 ? `Enquête : <b>${S.investigations}</b> restante` : 'Enquête utilisée'}</span>`);
     lines.push(`${ICON.cloche}<span>${S.emergencyLeft > 0 ? 'Réunion d’urgence disponible' : 'Réunion d’urgence utilisée'}</span>`);
     panel.className = `role-panel role-${S.role}`;

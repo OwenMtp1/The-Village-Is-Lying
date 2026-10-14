@@ -356,8 +356,16 @@ export class VillageView {
 
   /** Nom du lieu où se trouve la caméra. */
   placeName(): string {
-    const p = this.camera.position;
-    if (this.insideId) return BUILDINGS.find((b) => b.id === this.insideId)!.name;
+    return this.placeAt(this.camera.position);
+  }
+
+  /** Nom du lieu en un point : bâtiment (s'il est dedans), place, rue, ou bâtiment le plus proche. */
+  placeAt(p: THREE.Vector3): string {
+    for (const b of this.village.buildings) {
+      if (!insideBuilding(b.spec, p.x, p.z, -0.15)) continue;
+      const fy = b.matrix.elements[13];
+      if (p.y > fy - 3 && p.y < fy + b.plan.wallTop + 0.5) return b.spec.name;
+    }
     const rd = roadDistance(p.x, p.z);
     if (Math.hypot(p.x, p.z) < 17) return 'Place centrale';
     if (rd.road && rd.d < 4) return rd.road.name;

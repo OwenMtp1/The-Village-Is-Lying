@@ -40,6 +40,16 @@ export interface PlayerPose {
   /** lampe de poche allumée, et tangage du regard (direction du faisceau) */
   torch: boolean;
   pitch: number;
+  /** arme en main (visible de tous) : couteau (tueurs), pistolet (shérifs) */
+  item?: HeldItem;
+}
+
+export type HeldItem = 'couteau' | 'pistolet' | null;
+
+/** Geste vu par les joueurs proches : coup de couteau, tir (pour animer l'arme du joueur concerné). */
+export interface Gesture {
+  id: string;
+  kind: 'couteau' | 'tir';
 }
 
 /** État public de la partie (aucun rôle avant la fin). */
@@ -94,7 +104,7 @@ export interface ClientToServer {
   'salon:retour': (p: Record<string, never>, ack: Ack) => void;
   'jeu:pose': (p: PlayerPose) => void;
   'jeu:eliminer': (p: { target: string }, ack: Ack) => void;
-  'jeu:tirer': (p: { target: string }, ack: Ack) => void;
+  'jeu:tirer': (p: { target: string | null }, ack: Ack<{ hit: boolean }>) => void;
   'jeu:enqueter': (p: { target: string }, ack: Ack<{ killer: boolean }>) => void;
   'jeu:signaler': (p: { body: string }, ack: Ack) => void;
   'jeu:urgence': (p: Record<string, never>, ack: Ack) => void;
@@ -106,5 +116,6 @@ export interface ServerToClient {
   'jeu:etat': (v: GameView) => void;
   'jeu:secret': (v: PrivateInfo) => void;
   'jeu:poses': (p: Record<string, PlayerPose>) => void;
+  'jeu:geste': (g: Gesture) => void;
   'jeu:evenement': (e: GameEvent) => void;
 }

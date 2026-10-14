@@ -182,7 +182,8 @@ const soloHud = document.createElement('div');
 soloHud.className = 'solo-hud';
 soloHud.innerHTML = `<div class="who"><img alt=""><div><div class="mm-kicker">Exploration solo</div><div class="who-name"></div><div class="who-sub"></div></div></div>
   <button type="button" class="hud-btn pause-btn" title="Menu (Échap)" aria-label="Menu de pause">${ICON.menu}</button>
-  <div class="controls-help"><span>Cliquez pour diriger la caméra</span><span><kbd>Z Q S D</kbd> marcher</span><span><kbd>Maj</kbd> courir</span><span><kbd>Espace</kbd> sauter</span><span><kbd>V</kbd> vue subjective</span><span><kbd>L</kbd> lampe</span><span><kbd>Échap</kbd> menu</span></div>`;
+  <div class="controls-help"><span>Cliquez pour diriger la caméra</span><span><kbd>Z Q S D</kbd> marcher</span><span><kbd>Maj</kbd> courir</span><span><kbd>Espace</kbd> sauter</span><span><kbd>V</kbd> vue subjective</span><span><kbd>L</kbd> lampe</span><span><kbd>N</kbd> vol libre</span><span><kbd>Échap</kbd> menu</span></div>
+  <div class="noclip-badge" role="status">Vol libre — traverse les murs · <kbd>Espace</kbd> / <kbd>C</kbd> monter / descendre · <kbd>Maj</kbd> plus vite · <kbd>N</kbd> pour atterrir</div>`;
 document.body.appendChild(soloHud);
 
 const gameUi = new GameUi({
@@ -245,9 +246,20 @@ view.afterAtmosphere = (dt, daylight) => {
 };
 const inv = document.createElement('div');
 inv.className = 'inventory';
-inv.innerHTML = `<div class="clock" role="timer"><span class="clock-icon" aria-hidden="true"></span><span class="clock-text"></span></div><button type="button" class="slot" title="Allumer ou éteindre (L)" aria-pressed="false"><span class="slot-key">L</span><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 9h9l3-3h4v12h-4l-3-3H3z" fill="currentColor"/><path d="M20 8l3-2M20 12h3M20 16l3 2" stroke="currentColor" stroke-width="1.5" fill="none"/></svg><span class="slot-name">Lampe de poche</span><span class="slot-state"></span></button>`;
+inv.innerHTML = `<div class="clock" role="timer"><span class="clock-icon" aria-hidden="true"></span><span class="clock-text"></span></div><button type="button" class="slot" title="Allumer ou éteindre (L)" aria-pressed="false"><span class="slot-key">L</span><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 9h9l3-3h4v12h-4l-3-3H3z" fill="currentColor"/><path d="M20 8l3-2M20 12h3M20 16l3 2" stroke="currentColor" stroke-width="1.5" fill="none"/></svg><span class="slot-name">Lampe de poche</span><span class="slot-state"></span></button>
+  <button type="button" class="slot weapon" title="Sortir ou ranger (2)" aria-pressed="false" hidden><span class="slot-key">2</span><span class="weapon-ic" aria-hidden="true"></span><span class="slot-name"></span><span class="slot-state"></span></button>
+  <div class="crosshair" aria-hidden="true"></div>`;
 document.body.appendChild(inv);
 inv.querySelector('.slot')!.addEventListener('click', () => (mode === 'online' ? online.toggleTorch() : game.toggleTorch()));
+inv.querySelector('.slot.weapon')!.addEventListener('click', () => online.toggleWeapon());
+const KNIFE_SVG = '<svg viewBox="0 0 24 24"><path d="M3 21l9-9 2 2-9 9z" fill="currentColor"/><path d="M12 12l8-9 1 1-7 10z" fill="currentColor" opacity=".75"/></svg>';
+const GUN_SVG = '<svg viewBox="0 0 24 24"><path d="M2 8h17v4h-6l-1 2h-3l-1 6H4l2-8H2z" fill="currentColor"/><rect x="19" y="9" width="3" height="2" fill="currentColor"/></svg>';
+// nom du lieu où se trouve le personnage (rue, place, bâtiment), mis en avant quand il change
+const placeEl = document.createElement('div');
+placeEl.className = 'place-label';
+placeEl.setAttribute('aria-live', 'polite');
+document.body.appendChild(placeEl);
+let lastPlace = '';
 const fmt = (s: number) => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, '0')}`;
 let lastTorch = false;
 setInterval(() => {
@@ -258,6 +270,34 @@ setInterval(() => {
   inv.classList.toggle('on', on);
   inv.querySelector('.slot')!.setAttribute('aria-pressed', String(on));
   inv.querySelector('.slot-state')!.textContent = on ? 'allumée' : 'éteinte';
+  // arme du rôle (partie en ligne) : couteau du tueur, pistolet du shérif et ses balles
+  const wslot = inv.querySelector('.slot.weapon') as HTMLButtonElement;
+  const weapon = mode === 'online' && net.game?.alive[net.me] ? online.weapon : null;
+  wslot.hidden = !weapon;
+  if (weapon) {
+    const out = online.item === weapon;
+    wslot.classList.toggle('on', out);
+    wslot.setAttribute('aria-pressed', String(out));
+    if (wslot.dataset.w !== weapon) {
+      wslot.dataset.w = weapon;
+      wslot.querySelector('.weapon-ic')!.innerHTML = weapon === 'couteau' ? KNIFE_SVG : GUN_SVG;
+      wslot.querySelector('.slot-name')!.textContent = weapon === 'couteau' ? 'Couteau' : 'Pistolet';
+    }
+    const ammo = net.secret?.ammo ?? 0;
+    wslot.querySelector('.slot-state')!.textContent = `${out ? 'en main' : 'rangé'}${weapon === 'pistolet' ? ` · ${ammo} balle${ammo > 1 ? 's' : ''}` : ''}`;
+  }
+  soloHud.classList.toggle('noclip', mode === 'solo' && game.noclip);
+  const me = mode === 'online' ? online.player : game.player;
+  if (me) {
+    const name = view.placeAt(me.root.position);
+    if (name !== lastPlace) {
+      lastPlace = name;
+      placeEl.textContent = name;
+      placeEl.classList.remove('changed');
+      void placeEl.offsetWidth;
+      placeEl.classList.add('changed');
+    }
+  }
   const d = dayState(elapsed());
   inv.querySelector('.clock-icon')!.textContent = d.day ? '☀' : '☾';
   inv.querySelector('.clock-text')!.textContent = d.day ? `Jour · la nuit tombe dans ${fmt(d.remaining)}` : `Nuit · le jour se lève dans ${fmt(d.remaining)}`;

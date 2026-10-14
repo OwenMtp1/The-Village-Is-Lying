@@ -84,7 +84,11 @@ export const CAMERA = {
   distance: 3.1,
   minDistance: 1.3,
   maxDistance: 6,
-  shoulder: 0.55,
+  /** décalage latéral de la caméra : 0 = centrée derrière le personnage */
+  shoulder: 0,
+  /** en visée (pistolet) : sur l'épaule droite, plus près */
+  aimShoulder: 0.55,
+  aimDistance: 2.0,
   aimHeight: 0.93,
   pitch: 0.22,
   minPitch: -0.6,

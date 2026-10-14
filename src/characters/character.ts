@@ -87,6 +87,25 @@ export class Character {
     this.sync();
   }
 
+  /**
+   * Vol libre sans collision (noclip, exploration solo) : le personnage traverse murs et planchers, flotte
+   * immobile (posture d'attente) et regarde dans la direction du vol. À la sortie, la gravité le repose au sol.
+   */
+  fly(dt: number, vx: number, vy: number, vz: number, lookYaw: number) {
+    const c = this.controller;
+    c.x += vx * dt;
+    c.y += vy * dt;
+    c.z += vz * dt;
+    c.vx = c.vz = c.vy = 0;
+    c.realVx = c.realVz = 0;
+    c.grounded = false;
+    const delta = wrap(lookYaw - this.yaw);
+    this.yaw = wrap(this.yaw + delta * Math.min(1, dt * 8));
+    this.animator.update(dt, { speed: 0, direction: 1, turnRate: 0, grounded: true, vy: 0 });
+    this.visualY = c.y;
+    this.sync();
+  }
+
   private sync() {
     const c = this.controller;
     this.root.position.set(c.x, this.visualY, c.z);

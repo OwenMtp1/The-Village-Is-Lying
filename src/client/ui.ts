@@ -84,6 +84,7 @@ export class GameUi {
   attach(online: OnlineGame) {
     this.online = online;
     online.onFeedback = (t, kind) => this.toast(t, kind ?? 'info');
+    net.onGesture = (g) => online.onGesture(g);
   }
 
   toast(text: string, kind: ToastKind = 'info') {
@@ -97,7 +98,8 @@ export class GameUi {
   private onEvent(e: GameEvent) {
     const kind: ToastKind = e.kind === 'fin' ? 'info' : e.kind;
     this.toast(e.text, kind);
-    if (e.kind === 'tir') sfx.gunshot();
+    // la détonation de son propre tir est déjà jouée au clic
+    if (e.kind === 'tir' && !this.online?.justShot) sfx.gunshot();
     if (e.kind === 'reunion') sfx.bell();
   }
 
@@ -146,6 +148,8 @@ export class GameUi {
         this.results.show(snap);
       }
     }
+    // réunion : la souris est libérée tout de suite pour voter (pas besoin d'appuyer sur Échap)
+    if (G?.phase === 'reunion' && document.pointerLockElement) document.exitPointerLock();
     const inGame = !!L && !!G && (L.phase === 'partie' || L.phase === 'fin');
     if (inGame) this.hooks.enterOnline();
     else if (this.hooks.mode() === 'online') this.hooks.exitOnline();

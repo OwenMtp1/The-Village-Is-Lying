@@ -4,6 +4,10 @@
 .mode-solo .solo-hud { display: block; }
 .mode-online .online-hud.open { display: block; }
 .playing .inventory { display: flex; }
+.place-label { display: none; position: fixed; z-index: 11; left: 50%; top: 16px; transform: translateX(-50%); font: 500 14px var(--display); letter-spacing: 0.22em; text-transform: uppercase; color: var(--gold-2); text-shadow: 0 1px 8px #000, 0 0 2px #000; pointer-events: none; white-space: nowrap; }
+.playing .place-label { display: block; }
+.place-label.changed { animation: place-in 2.6s var(--ease); }
+@keyframes place-in { 0% { opacity: 0; transform: translate(-50%, -6px); font-size: 14px; } 12% { opacity: 1; transform: translate(-50%, 0); font-size: 20px; } 70% { font-size: 20px; } 100% { font-size: 14px; } }
 .show-stats .perf { display: block; }
 .mode-inspection .perf { display: none; }
 
@@ -27,14 +31,25 @@
 .inventory .slot-key { grid-row: span 2; font: 600 11px var(--mono); border: 1px solid var(--line-2); border-radius: 3px; padding: 1px 5px; color: var(--gold-2); }
 .inventory .slot-name { font-size: 14px; color: var(--ink); }
 .inventory .slot-state { font-size: 12px; }
-.inventory.on .slot { border-color: var(--gold); color: var(--gold-2); box-shadow: 0 0 18px rgba(232, 183, 101, 0.25); }
-.inventory.on .slot-state { color: var(--gold-2); }
+.inventory .slot.weapon .weapon-ic { grid-row: span 2; width: 22px; height: 22px; }
+.inventory .slot.weapon .weapon-ic svg { width: 22px; height: 22px; }
+.inventory .slot.weapon.on { border-color: var(--c-tueur); color: #f0a497; box-shadow: 0 0 18px rgba(224, 103, 90, 0.25); }
+.inventory .slot.weapon.on .slot-state { color: #f0a497; }
+.crosshair { display: none; position: fixed; left: 50%; top: 50%; width: 22px; height: 22px; margin: -11px 0 0 -11px; pointer-events: none; z-index: 10;
+  background: radial-gradient(circle, #fff 0 1.5px, transparent 2px), linear-gradient(#fff, #fff) 50% 0 / 2px 6px no-repeat, linear-gradient(#fff, #fff) 50% 100% / 2px 6px no-repeat, linear-gradient(#fff, #fff) 0 50% / 6px 2px no-repeat, linear-gradient(#fff, #fff) 100% 50% / 6px 2px no-repeat;
+  filter: drop-shadow(0 0 2px #000); }
+.aiming .crosshair { display: block; }
+.inventory.on .slot:not(.weapon) { border-color: var(--gold); color: var(--gold-2); box-shadow: 0 0 18px rgba(232, 183, 101, 0.25); }
+.inventory.on .slot:not(.weapon) .slot-state { color: var(--gold-2); }
 
 /* exploration solo */
 .who { position: fixed; z-index: 11; left: 16px; bottom: 16px; display: flex; gap: 12px; align-items: center; background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); padding: 8px 14px 8px 8px; backdrop-filter: blur(6px); }
 .who img { width: 38px; height: 76px; object-fit: cover; border-radius: 2px; }
 .who-name { font: 700 18px var(--display); letter-spacing: 0.06em; }
 .who-sub { font-size: 13px; color: var(--muted); }
+
+.noclip-badge { display: none; position: fixed; z-index: 11; left: 50%; top: 48px; transform: translateX(-50%); font-size: 14px; color: var(--ink); background: var(--panel); border: 1px solid var(--gold); border-radius: 999px; padding: 5px 14px; white-space: nowrap; }
+.solo-hud.noclip .noclip-badge { display: block; }
 
 /* ── carte du rôle ── */
 .role-panel { position: fixed; z-index: 11; left: 16px; top: 14px; width: min(340px, calc(100vw - 32px)); display: flex; gap: 12px; background: var(--panel); border: 1px solid var(--line); border-left: 3px solid var(--role, var(--line-2)); border-radius: var(--radius); padding: 10px 12px 10px 10px; backdrop-filter: blur(6px); box-shadow: 0 8px 30px rgba(0, 0, 0, 0.35); }
@@ -159,7 +174,7 @@
 .toast.k-indice { border-left-color: var(--c-detective); }
 .toast.k-indice .ic { color: var(--c-detective); }
 @keyframes toast-in { from { opacity: 0; transform: translateY(-8px); } to { opacity: 1; transform: none; } }
-.mode-online .toasts, .mode-solo .toasts { top: 64px; bottom: auto; }
+.mode-online .toasts, .mode-solo .toasts { top: 52px; bottom: auto; }
 
 @media (max-width: 760px) {
   .role-panel { top: auto; bottom: 10px; left: 8px; right: 8px; width: auto; }

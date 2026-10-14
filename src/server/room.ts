@@ -15,13 +15,15 @@ import { assignAppearances } from '../characters/appearance';
 import type { Sex } from '../characters/catalog';
 import { compositionErrors, campOf, startBlocker, totalOf, type Composition, type Role } from '../shared/roles';
 import { RULES, assignRoles, winnerOf, type Winner } from '../shared/rules';
-import type { EventKind, GameView, LobbyView, PlayerPose, PrivateInfo } from '../shared/protocol';
+import type { EventKind, GameView, Gesture, HeldItem, LobbyView, PlayerPose, PrivateInfo } from '../shared/protocol';
 
 export interface RoomOutput {
   lobby(view: LobbyView): void;
   game(view: GameView): void;
   secret(playerId: string, info: PrivateInfo): void;
   event(text: string, kind: EventKind, to?: string): void;
+  /** geste (coup de couteau, tir) montré aux seuls joueurs qui peuvent le voir */
+  gesture(g: Gesture, to: string[]): void;
 }
 
 interface Member {
@@ -237,6 +239,31 @@ export class Room {
     if (!p || !q) return Infinity;
     return Math.hypot(p.x - q.x, p.z - q.z, (p.y - q.y) * 1.5);
   }
+  /** Écart (rad) entre le regard horizontal de `a` et la direction de `b` (0 si l'un est sur l'autre). */
+  private facing(a: string, b: string) {
+    const p = this.poses.get(a);
+    const q = this.poses.get(b);
+    if (!p || !q) return Math.PI;
+    const dx = q.x - p.x;
+    const dz = q.z - p.z;
+    if (Math.hypot(dx, dz) < 0.3) return 0;
+    const d = Math.atan2(dx, dz) - p.yaw;
+    return Math.abs(Math.atan2(Math.sin(d), Math.cos(d)));
+  }
+  private holding(id: string, item: HeldItem) {
+    return this.poses.get(id)?.item === item;
+  }
+  /** Montre un geste aux joueurs à portée de vue (les autres n'apprennent rien de la position). */
+  private showGesture(g: Gesture, range: number) {
+    const p = this.poses.get(g.id);
+    if (!p) return;
+    const to = [...this.players.keys()].filter((pid) => {
+      const q = this.poses.get(pid);
+      return pid === g.id || (q && Math.hypot(q.x - p.x, q.z - p.z) <= range);
+    });
+    this.out.gesture(g, to);
+  }
+
   /** Les deux joueurs se voient-ils (poitrine à poitrine) ? */
   private seen(a: string, b: string) {
     const p = this.poses.get(a);
@@ -258,12 +285,15 @@ export class Room {
       const dt = Math.max(0.05, (t - prev.t) / 1000);
       if (Math.hypot(p.x - prev.x, p.z - prev.z) / dt > RULES.maxSpeed && prev.t > 0) return;
     }
-    this.poses.set(id, { x: p.x, y: p.y, z: p.z, yaw: p.yaw, speed: Math.min(p.speed, 6), grounded: !!p.grounded, vy: p.vy, dir: p.dir === -1 ? -1 : 1, torch: p.torch === true, pitch: Math.max(-1.5, Math.min(1.5, p.pitch ?? 0)), t });
+    // une arme n'est acceptée que pour le rôle qui la possède (un joueur ne peut pas en exhiber une fausse)
+    const role = this.secrets.get(id)?.role;
+    const item: HeldItem = p.item === 'couteau' && role === 'tueur' ? 'couteau' : p.item === 'pistolet' && role === 'sherif' ? 'pistolet' : null;
+    this.poses.set(id, { x: p.x, y: p.y, z: p.z, yaw: p.yaw, speed: Math.min(p.speed, 6), grounded: !!p.grounded, vy: p.vy, dir: p.dir === -1 ? -1 : 1, torch: p.torch === true && !item, pitch: Math.max(-1.5, Math.min(1.5, p.pitch ?? 0)), item, t });
   }
 
   posesView(): Record<string, PlayerPose> {
     const out: Record<string, PlayerPose> = {};
-    for (const [id, p] of this.poses) if (this.alive.get(id)) out[id] = { x: p.x, y: p.y, z: p.z, yaw: p.yaw, speed: p.speed, grounded: p.grounded, vy: p.vy, dir: p.dir, torch: p.torch, pitch: p.pitch };
+    for (const [id, p] of this.poses) if (this.alive.get(id)) out[id] = { x: p.x, y: p.y, z: p.z, yaw: p.yaw, speed: p.speed, grounded: p.grounded, vy: p.vy, dir: p.dir, torch: p.torch, pitch: p.pitch, item: p.item ?? null };
     return out;
   }
 
@@ -275,28 +305,44 @@ export class Room {
     if (target === id || !this.alive.get(target)) throw new RoomError('Cible invalide.');
     if (this.secrets.get(target)?.role === 'tueur') throw new RoomError('C’est un autre tueur.');
     if (this.now() < s.killReadyAt) throw new RoomError(`Patience : encore ${Math.ceil((s.killReadyAt - this.now()) / 1000)} s.`);
+    if (!this.holding(id, 'couteau')) throw new RoomError('Sortez votre couteau (touche 2).');
     if (this.dist(id, target) > RULES.killRange) throw new RoomError('Trop loin.');
     if (!this.seen(id, target)) throw new RoomError('Un obstacle vous sépare de votre cible.');
+    if (this.facing(id, target) > RULES.stabAngle) throw new RoomError('Faites face à votre cible.');
     s.killReadyAt = this.now() + RULES.killCooldown * 1000;
+    this.showGesture({ id, kind: 'couteau' }, RULES.stabSeenRange);
     this.kill(target);
     this.sendSecret(id);
     this.afterDeath();
   }
 
-  shoot(id: string, target: string) {
+  /**
+   * Tir du shérif, pistolet en main : la balle part toujours (munition consommée, détonation entendue de tout le
+   * village). Elle touche la cible désignée seulement si celle-ci est vivante, à portée, dans l'axe du regard et
+   * sans obstacle ; sinon c'est un tir manqué. Abattre un innocent coûte la vie au shérif.
+   */
+  shoot(id: string, target: string | null): { hit: boolean } {
     const s = this.inGame(id);
     this.requirePlaying();
     this.requireAlive(id);
     if (s.role !== 'sherif') throw new RoomError('Seuls les shérifs ont une arme.');
+    if (!this.holding(id, 'pistolet')) throw new RoomError('Sortez votre pistolet (touche 2).');
     if (s.ammo <= 0) throw new RoomError('Vous n’avez plus de balle.');
-    if (target === id || !this.alive.get(target)) throw new RoomError('Cible invalide.');
-    if (this.dist(id, target) > RULES.shootRange) throw new RoomError('Trop loin pour tirer.');
-    if (!this.seen(id, target)) throw new RoomError('Pas de ligne de tir : un obstacle vous sépare de la cible.');
     s.ammo--;
-    const innocent = campOf(this.secrets.get(target)!.role) === 'innocents';
-    this.kill(target);
-    this.log.push(`Un coup de feu : ${this.name(target)} est mort.`);
-    this.out.event(`Un coup de feu retentit dans le village : ${this.name(target)} est mort.`, 'tir');
+    this.showGesture({ id, kind: 'tir' }, RULES.shotSeenRange);
+    const hit =
+      target !== null && target !== id && !!this.alive.get(target) && this.dist(id, target) <= RULES.shootRange && this.facing(id, target) <= RULES.aimAngle && this.seen(id, target);
+    if (!hit) {
+      this.log.push('Un coup de feu a retenti, sans victime.');
+      this.out.event('Un coup de feu retentit dans le village.', 'tir');
+      this.sendSecret(id);
+      this.publishGame();
+      return { hit: false };
+    }
+    const innocent = campOf(this.secrets.get(target!)!.role) === 'innocents';
+    this.kill(target!);
+    this.log.push(`Un coup de feu : ${this.name(target!)} est mort.`);
+    this.out.event(`Un coup de feu retentit dans le village : ${this.name(target!)} est mort.`, 'tir');
     if (innocent && RULES.sheriffDiesOnMistake) {
       this.kill(id);
       this.log.push(`${this.name(id)} a abattu un innocent et l’a payé de sa vie.`);
@@ -304,6 +350,7 @@ export class Room {
     }
     this.sendSecret(id);
     this.afterDeath();
+    return { hit: true };
   }
 
   investigate(id: string, target: string): boolean {
@@ -390,11 +437,18 @@ export class Room {
     const sorted = [...tally].sort((a, b) => b[1] - a[1]);
     const top = sorted[0];
     const tie = sorted.length > 1 && sorted[1][1] === top?.[1];
+    const votes = (n: number) => `${n} voix`;
+    // décompte public : chacun voit pourquoi quelqu'un est (ou n'est pas) éliminé
+    const detail = [...sorted.map(([id, n]) => `${this.name(id)} ${votes(n)}`), ...(skip ? [`personne ${votes(skip)}`] : [])].join(', ');
+    const absent = [...this.alive].filter(([pid, a]) => a && !m.votes.has(pid)).length;
+    const missing = absent ? ` ; ${absent} sans vote` : '';
     let text: string;
-    if (!top || tie || top[1] <= skip) text = 'Le village n’a désigné personne.';
+    if (!top) text = `Le village n’a désigné personne : aucun vote contre un joueur (${skip ? `${votes(skip)} pour « personne »` : 'aucun vote'}${missing}).`;
+    else if (tie) text = `Égalité, personne n’est éliminé (${detail}${missing}).`;
+    else if (top[1] <= skip) text = `Le village a choisi de ne désigner personne (${detail}${missing}).`;
     else {
       this.kill(top[0], false);
-      text = `Le village a voté : ${this.name(top[0])} est éliminé (${top[1]} voix).`;
+      text = `Le village a voté : ${this.name(top[0])} est éliminé (${detail}${missing}).`;
     }
     this.meeting = null;
     this.gamePhase = 'jeu';

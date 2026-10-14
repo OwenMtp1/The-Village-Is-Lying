@@ -1,5 +1,6 @@
 /**
- * Caméra du joueur : troisième personne derrière l'épaule droite (par défaut) ou vue subjective (touche V).
+ * Caméra du joueur : troisième personne centrée derrière le personnage (par défaut), décalée sur l'épaule droite
+ * pour viser (arme sortie), ou vue subjective (touche V).
  * La souris tourne la caméra ; le passage d'une vue à l'autre conserve l'orientation du regard.
  * En troisième personne, la caméra ne traverse ni les murs ni les planchers (elle se rapproche du personnage).
  */
@@ -18,6 +19,12 @@ export class PlayerCamera {
   distance: number = CAMERA.distance;
   private curDist: number = CAMERA.distance;
   private pivot = new THREE.Vector3();
+  /** visée (pistolet sorti) : caméra sur l'épaule droite et plus proche, le personnage ne cache pas le viseur */
+  aiming = false;
+  /** vol libre (noclip) : la caméra traverse aussi les murs */
+  noCollide = false;
+  private shoulderS = 0;
+  private aimS = 0;
   private initialized = false;
 
   constructor(readonly camera: THREE.PerspectiveCamera) {}
@@ -71,12 +78,16 @@ export class PlayerCamera {
     this.pivot.z += (want.z - this.pivot.z) * Math.min(1, dt * CAMERA.follow * 1.5);
     this.pivot.y += (want.y - this.pivot.y) * Math.min(1, dt * CAMERA.follow * 0.5);
     const right = new THREE.Vector3(-Math.cos(this.yaw), 0, Math.sin(this.yaw));
-    const shoulder = this.pivot.clone().addScaledVector(right, CAMERA.shoulder);
+    const k = Math.min(1, dt * 8);
+    this.aimS += ((this.aiming ? 1 : 0) - this.aimS) * k;
+    this.shoulderS += ((this.aiming ? CAMERA.aimShoulder : CAMERA.shoulder) - this.shoulderS) * k;
+    const shoulder = this.pivot.clone().addScaledVector(right, this.shoulderS);
     // la caméra ne traverse pas les murs : on cherche le premier obstacle entre le personnage et elle
     const head = this.pivot.clone();
-    let free = this.distance;
+    const wanted = THREE.MathUtils.lerp(this.distance, Math.min(this.distance, CAMERA.aimDistance), this.aimS);
+    let free = wanted;
     const toShoulder = shoulder.clone().sub(head);
-    for (let t = 0.1; t <= 1.0001; t += 0.1) {
+    for (let t = 0.1; t <= 1.0001 && !this.noCollide; t += 0.1) {
       const p = head.clone().addScaledVector(toShoulder, t);
       if (world.blocksPoint(p.x, p.y, p.z, 0.12)) {
         free = 0;
@@ -84,8 +95,8 @@ export class PlayerCamera {
       }
     }
     const anchor = free === 0 ? head : shoulder;
-    if (free > 0)
-      for (let d = 0.2; d <= this.distance + 1e-6; d += 0.1) {
+    if (free > 0 && !this.noCollide)
+      for (let d = 0.2; d <= wanted + 1e-6; d += 0.1) {
         const p = anchor.clone().addScaledVector(dir, -d);
         if (world.blocksPoint(p.x, p.y, p.z, 0.18)) {
           free = Math.max(0.35, d - 0.25);

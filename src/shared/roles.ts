@@ -9,8 +9,8 @@ export type Camp = 'tueurs' | 'innocents';
 export const ROLES: Role[] = ['tueur', 'sherif', 'detective', 'villageois'];
 
 export const ROLE_INFO: Record<Role, { nom: string; pluriel: string; camp: Camp; description: string }> = {
-  tueur: { nom: 'Tueur', pluriel: 'Tueurs', camp: 'tueurs', description: 'Élimine les villageois sans te faire démasquer. Tu connais les autres tueurs.' },
-  sherif: { nom: 'Shérif', pluriel: 'Shérifs', camp: 'innocents', description: 'Tu as une seule balle. Abats un tueur… mais si tu tires sur un innocent, tu le paies de ta vie.' },
+  tueur: { nom: 'Tueur', pluriel: 'Tueurs', camp: 'tueurs', description: 'Élimine les villageois au couteau sans te faire démasquer : une lame sortie se voit. Tu connais les autres tueurs.' },
+  sherif: { nom: 'Shérif', pluriel: 'Shérifs', camp: 'innocents', description: 'Tu as un pistolet et 4 balles. Abats les tueurs… mais si tu tues un innocent, tu le paies de ta vie.' },
   detective: { nom: 'Détective', pluriel: 'Détectives', camp: 'innocents', description: 'Une fois par partie, enquête sur un villageois proche pour savoir s’il est un tueur.' },
   villageois: { nom: 'Villageois', pluriel: 'Villageois', camp: 'innocents', description: 'Aucun pouvoir : observe, discute et vote pour démasquer les tueurs.' },
 };

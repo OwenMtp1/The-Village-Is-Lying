@@ -19,6 +19,8 @@ export class Input {
     window.addEventListener('keyup', (e) => this.down.delete(e.code));
     window.addEventListener('blur', () => this.down.clear());
     target.addEventListener('pointerdown', (e) => {
+      // clic gauche avec la souris capturée : action (coup de couteau, tir) ; le premier clic sert à capturer
+      if (this.locked && e.button === 0) this.pressed.add('Mouse0');
       this.dragging = true;
       target.setPointerCapture?.(e.pointerId);
     });

@@ -10,7 +10,7 @@ import express from 'express';
 import { Server } from 'socket.io';
 import { Room, RoomError, type SightTest } from './room';
 import { buildCollisionWorld, type CollisionWorld } from '../village/collision';
-import type { ClientToServer, ServerToClient, Ack, EventKind } from '../shared/protocol';
+import type { ClientToServer, ServerToClient, Ack, EventKind, Gesture } from '../shared/protocol';
 
 const LETTERS = 'ABCDEFGHJKLMNPQRSTUVWXYZ';
 
@@ -21,7 +21,8 @@ export interface GameServer {
   close(): Promise<void>;
 }
 
-export function createGameServer(opts: { staticDir?: string } = {}): GameServer {
+/** `random` : tirages (rôles, apparences, places) ; par défaut cryptographiques. Les contrôles automatiques en fixent la graine. */
+export function createGameServer(opts: { staticDir?: string; random?: () => number } = {}): GameServer {
   const app = express();
   if (opts.staticDir && existsSync(opts.staticDir)) {
     app.use(express.static(opts.staticDir, { maxAge: '1h', index: 'index.html' }));
@@ -49,6 +50,12 @@ export function createGameServer(opts: { staticDir?: string } = {}): GameServer 
     secret: (pid: string, info: Parameters<ServerToClient['jeu:secret']>[0]) => {
       const sid = sockets.get(pid);
       if (sid) io.to(sid).emit('jeu:secret', info);
+    },
+    gesture: (g: Gesture, to: string[]) => {
+      for (const pid of to) {
+        const sid = sockets.get(pid);
+        if (sid) io.to(sid).emit('jeu:geste', g);
+      }
     },
     event: (text: string, kind: EventKind, to?: string) => {
       if (to) {
@@ -97,7 +104,7 @@ export function createGameServer(opts: { staticDir?: string } = {}): GameServer 
       guard(ack, () => {
         leaveCurrent(true);
         const code = newCode();
-        const r = new Room(code, p?.composition, output(code), Date.now, undefined, sight);
+        const r = new Room(code, p?.composition, output(code), Date.now, opts.random, sight);
         const m = r.join(p?.name, p?.sex);
         rooms.set(code, r);
         attach(r, m.id);
@@ -126,7 +133,7 @@ export function createGameServer(opts: { staticDir?: string } = {}): GameServer 
     socket.on('salon:retour', (_p, ack) => guard(ack, () => need().backToLobby(pid)));
     socket.on('jeu:pose', (p) => room?.pose(pid, p));
     socket.on('jeu:eliminer', (p, ack) => guard(ack, () => need().eliminate(pid, String(p?.target))));
-    socket.on('jeu:tirer', (p, ack) => guard(ack, () => need().shoot(pid, String(p?.target))));
+    socket.on('jeu:tirer', (p, ack) => guard(ack, () => need().shoot(pid, typeof p?.target === 'string' ? p.target : null)));
     socket.on('jeu:enqueter', (p, ack) => guard(ack, () => ({ killer: need().investigate(pid, String(p?.target)) })));
     socket.on('jeu:signaler', (p, ack) => guard(ack, () => need().report(pid, String(p?.body))));
     socket.on('jeu:urgence', (_p, ack) => guard(ack, () => need().emergency(pid)));

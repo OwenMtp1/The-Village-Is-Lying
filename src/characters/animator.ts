@@ -18,6 +18,10 @@ import { ANIM, JUMP } from './config';
 import { LOCOMOTION, type CharacterBase } from './assets';
 import { applyPose, bipedRig, type Pose, type Rig } from './pose';
 import { torchModel } from './flashlight';
+import { gunModel, knifeModel } from './weapons';
+
+/** Objet tenu dans la main droite (un seul à la fois). */
+export type HandItem = 'lampe' | 'couteau' | 'pistolet' | null;
 
 export interface AnimInput {
   /** vitesse horizontale réelle (m/s) */
@@ -62,7 +66,15 @@ export class CharacterAnimator {
   private blob: THREE.Mesh;
   /** lampe de poche tenue dans la main droite (visible quand elle est allumée) */
   private torch: THREE.Group = torchModel();
+  private knife: THREE.Group = knifeModel();
+  private gun: THREE.Group = gunModel();
   private hand: THREE.Object3D | null = null;
+  item: HandItem = null;
+  /** coup de couteau, recul du tir : 1 au déclenchement, décroît jusqu'à 0 */
+  private strikeT = 0;
+  private fireT = 0;
+  /** tangage de la visée (pistolet), positif vers le haut */
+  aimPitch = 0;
 
   constructor(readonly base: CharacterBase) {
     this.model = cloneSkinned(base.scene) as THREE.Group;
@@ -94,6 +106,11 @@ export class CharacterAnimator {
       this.torch.scale.setScalar(1 / this.scale);
       this.torch.position.set(0.09 / this.scale, 0.01 / this.scale, 0.03 / this.scale);
       this.hand.add(this.torch);
+      for (const w of [this.knife, this.gun]) {
+        w.scale.setScalar(1 / this.scale);
+        w.position.set(0.08 / this.scale, 0.0, 0.03 / this.scale);
+        this.hand.add(w);
+      }
     }
 
     this.mixer = new THREE.AnimationMixer(this.model);
@@ -136,7 +153,32 @@ export class CharacterAnimator {
 
   /** Affiche la lampe dans la main (allumée) ou la range (éteinte). */
   setTorch(on: boolean) {
-    this.torch.visible = on;
+    if (on) this.setItem('lampe');
+    else if (this.item === 'lampe') this.setItem(null);
+  }
+
+  /** Objet en main : lampe, couteau, pistolet ou rien (un seul à la fois). */
+  setItem(item: HandItem) {
+    this.item = item;
+    this.torch.visible = item === 'lampe';
+    this.knife.visible = item === 'couteau';
+    this.gun.visible = item === 'pistolet';
+  }
+
+  /** Coup de couteau (bras projeté vers l'avant). */
+  strike() {
+    this.strikeT = 1;
+  }
+
+  /** Tir : recul du bras et éclair du canon. */
+  fire() {
+    this.fireT = 1;
+  }
+
+  /** Position (monde) de la bouche du canon (départ de la balle, éclair). */
+  muzzlePosition(out = new THREE.Vector3()) {
+    this.root.updateMatrixWorld(true);
+    return out.set(0.24, 0.035, 0).applyMatrix4(this.gun.matrixWorld);
   }
 
   /** Position (monde) de la main droite : départ du faisceau de la lampe. */
@@ -215,10 +257,28 @@ export class CharacterAnimator {
 
     // ── couches procédurales : pose aérienne, inclinaison dans les virages ──
     const pose: Pose = {};
-    // lampe allumée : avant-bras droit levé, la lampe pointée devant soi
-    if (this.torch.visible && this.air < 0.5) {
-      pose.RightArm = { bend: -0.55 };
-      pose.RightForeArm = { bend: -0.75 };
+    // objet en main : lampe pointée devant soi, couteau tenu bas, pistolet bras tendu dans l'axe de la visée
+    this.strikeT = Math.max(0, this.strikeT - dt / 0.38);
+    this.fireT = Math.max(0, this.fireT - dt / 0.22);
+    if (this.air < 0.5) {
+      if (this.item === 'lampe') {
+        pose.RightArm = { bend: -0.55 };
+        pose.RightForeArm = { bend: -0.75 };
+      } else if (this.item === 'couteau') {
+        const c = Math.sin(Math.PI * (1 - this.strikeT)) * (this.strikeT > 0 ? 1 : 0);
+        pose.RightArm = { bend: -0.3 - 1.05 * c, side: -0.1 * c };
+        pose.RightForeArm = { bend: -1.0 + 0.95 * c };
+        if (c > 0) pose.Spine = { bend: 0.18 * c };
+      } else if (this.item === 'pistolet') {
+        const kick = this.fireT * this.fireT;
+        pose.RightArm = { bend: -1.42 - THREE.MathUtils.clamp(this.aimPitch, -0.9, 0.9) - 0.2 * kick, side: -0.12 };
+        pose.RightForeArm = { bend: -0.08 - 0.35 * kick };
+      }
+    }
+    const flash = this.gun.getObjectByName('eclair') as THREE.Mesh | undefined;
+    if (flash) {
+      (flash.material as THREE.MeshBasicMaterial).opacity = this.fireT > 0.55 ? 1 : 0;
+      flash.scale.setScalar(0.7 + Math.random() * 0.6);
     }
     if (this.air > 0.01) {
       const v0 = Math.sqrt(2 * JUMP.gravity * JUMP.height);

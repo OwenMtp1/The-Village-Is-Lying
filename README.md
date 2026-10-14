@@ -44,10 +44,15 @@ d'inspection (points de vue, vol libre, toits).
 
 | Rôle | Capacité (individuelle) | Touche |
 |---|---|---|
-| Tueur | éliminer un innocent à portée (2,2 m), délai de 25 s propre à chaque tueur | `E` |
-| Shérif | une balle : abattre la personne visée (14 m) ; s'il abat un innocent, il meurt aussi | `F` |
+| Tueur | un **couteau** dans l'inventaire : le sortir (`2`), puis clic pour poignarder la personne devant soi (2,2 m), délai de 25 s propre à chaque tueur. Une lame sortie est visible de tous. | `2`, clic |
+| Shérif | un **pistolet et 4 balles** : le sortir (`2`), viser au centre de l'écran (caméra sur l'épaule, viseur), clic pour tirer (25 m). Chaque tir part, touché ou manqué, et s'entend dans tout le village ; tuer un innocent coûte la vie au shérif | `2`, clic |
 | Détective | une enquête : savoir si la personne proche est un tueur (résultat privé) | `R` |
-| Tous | signaler un corps (`T`), une réunion d'urgence par joueur (`U`), voter pendant les réunions | |
+| Tous | lampe (`1` ou `L`), signaler un corps (`T`), une réunion d'urgence par joueur (`U`), voter pendant les réunions (la souris est libérée automatiquement) | |
+
+Le serveur vérifie chaque coup : arme réellement en main (un innocent ne peut pas exhiber d'arme), portée, ligne de vue,
+cible devant soi (couteau) ou dans l'axe du regard (pistolet). Les joueurs proches voient le geste (coup de couteau,
+recul et éclair du pistolet) ; la victime s'effondre là où elle se trouvait. Après un vote, le décompte est affiché
+(« Le village a voté : X est éliminé (X 3 voix, Y 1 voix, personne 2 voix) », égalité, abstentions).
 
 **Pendant la partie** : carte du rôle secret (icône + nom + état des pouvoirs : délai d'élimination, balle,
 enquête, réunion d'urgence), actions possibles affichées selon la situation, notifications (icône + texte,
@@ -64,6 +69,13 @@ munitions, vivants, phase, **ligne de vue** à travers les murs, planchers et re
 l'élimination et l'enquête) et ignore les positions impossibles. Une réunion se tient au plus une fois par corps ;
 un vote par vivant ; égalité ou majorité d'abstentions : personne n'est éliminé. Pas de limite de durée de partie
 (choix demandé : on joue jusqu'à la victoire d'un camp) ; la limite de temps porte sur les votes (60 s).
+
+## Exploration solo
+
+Le personnage se déplace seul dans le village, au milieu de quelques villageois ; le nom du lieu (rue, place,
+bâtiment) s'affiche en haut de l'écran à chaque changement. **`N` : vol libre (noclip)** — on traverse murs,
+planchers et toits dans la direction du regard (`Espace` / `C` pour monter / descendre, `Maj` pour aller plus vite) ;
+`N` à nouveau pour atterrir. La caméra est centrée derrière le personnage.
 
 ## Jour, nuit et lampe de poche
 
@@ -120,6 +132,13 @@ npx tsx scripts/solo-check.ts        # exploration solo, pause → menu, inspect
 npx tsx scripts/characters-check.ts   # 40 personnages, glissement des pieds, saut, captures
 BASE=http://localhost:3001 npm run shots   # captures de tous les points de vue de la map
 ```
+
+**Accessibilité** (`npx tsx scripts/reach.ts`) : pour chaque bâtiment, on remplit depuis la rue tout ce qu'un
+personnage (rayon 0,25 m) peut atteindre en suivant planchers, escaliers et échelles, avec les vraies collisions
+(murs, cloisons, mobilier). 216 pièces sur 221 sont accessibles (les deux étages du clocher, aux échelles très
+raides, sont praticables en jeu mais hors de portée de l'analyse). Pour cela les bâtiments ont été agrandis
+automatiquement (jusqu'à +40 % tant qu'ils ne touchent ni voisin, ni rue, ni place), les portes intérieures
+élargies à 1 m, les chaises, tabourets et bancs rendus franchissables et les paliers d'escalier dégagés.
 
 Les tests vérifient pour chaque bâtiment : escaliers et trémies à l'intérieur des murs, aucune cloison qui coupe
 une volée ou son palier, aucun meuble qui traverse un mur, chevauche un autre meuble, se trouve au-dessus d'une

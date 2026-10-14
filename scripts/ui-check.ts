@@ -21,6 +21,8 @@ const t0 = Date.now();
 await page.goto(BASE);
 await page.waitForFunction(() => (window as any).__village, null, { timeout: 240_000 });
 console.log(`village chargé en ${((Date.now() - t0) / 1000).toFixed(1)} s (swiftshader)`);
+// rendu logiciel très lent : qualité basse (sauf QUALITE=moyenne) pour que la boucle du jeu avance pendant le test
+if (process.env.QUALITE !== 'moyenne') await page.evaluate(`window.__village.settings.set({ quality: 'basse' })`);
 const ev = <T = unknown>(code: string) => page.evaluate(code) as Promise<T>;
 const text = (sel: string) => ev<string>(`document.querySelector(${JSON.stringify(sel)})?.textContent ?? ''`);
 const click = (sel: string) => ev(`document.querySelector(${JSON.stringify(sel)}).click()`);
@@ -28,6 +30,7 @@ const shot = async (name: string, frames = 2) => {
   await ev(`window.__village.view.paused = true`);
   for (let i = 0; i < frames; i++) await ev(`window.__village.view.renderFrame()`);
   writeFileSync(`${OUT}/${name}.png`, await page.screenshot({ timeout: 120_000 }));
+  await ev(`window.__village.view.paused = false`);
 };
 const wait = (ms: number) => page.waitForTimeout(ms);
 
@@ -120,13 +123,59 @@ for (const b of [bots[0], bots[2]]) await new Promise((r) => b.emit('jeu:voter',
 await wait(800);
 console.log('après le vote :', await ev(`window.__village.net.game.phase`), '|', await ev(`window.__village.net.game.log.slice(-1)[0]`));
 
-// le shérif abat le tueur : victoire des innocents
+// armes : selon le rôle tiré au sort pour l'hôte, il poignarde (tueur) ou tire (shérif) ; sinon un robot shérif tire
 const roleOf = (r: string) => [...secrets].find(([, s]) => s.role === r)?.[0];
 const killerBot = roleOf('tueur');
 const sheriffBot = roleOf('sherif');
 const killerId = killerBot ? ids.get(killerBot)! : hostId;
-if (sheriffBot) console.log('tir :', JSON.stringify(await new Promise((r) => sheriffBot.emit('jeu:tirer', { target: killerId }, r))));
-else console.log('tir (hôte) :', await ev(`window.__village.net.shoot(${JSON.stringify(killerId)}).then(() => 'ok', e => e.message)`));
+const poses = () => ev<Record<string, { x: number; y: number; z: number }>>(`window.__village.net.poses`);
+const botPose = (b: Socket, x: number, z: number, yaw = 0, item: string | null = null) => b.emit('jeu:pose', { x, y: 0, z, yaw, speed: 0, grounded: true, vy: 0, dir: 1, torch: false, pitch: 0, item });
+/** l'hôte regarde le point (x, z) : caméra et corps */
+const look = (x: number, z: number) => ev(`(() => { const o = window.__village.online; const c = o.player.controller; o.cam.yaw = Math.atan2(${x} - c.x, ${z} - c.z); o.cam.pitch = -0.08; })()`);
+const host = (await poses())[hostId];
+const ahead = (d: number) => [host.x + Math.sin(0) * d, host.z + d] as const;
+if (hostRole === 'sherif') {
+  const [tx, tz] = ahead(5);
+  await wait(2000);
+  botPose(killerBot!, tx, tz);
+  await wait(1500);
+  await look(tx, tz);
+  await page.keyboard.press('Digit2');
+  await wait(2500);
+  console.log('pistolet en main :', await ev(`window.__village.online.item`), '| viseur :', await ev(`document.body.classList.contains('aiming')`), '| inventaire :', (await text('.slot.weapon')).replace(/\s+/g, ' '));
+  await shot('11a-pistolet');
+  await ev(`window.__village.online.attack()`);
+  console.log('tir de l’hôte (shérif) sur le tueur');
+} else if (hostRole === 'tueur') {
+  const victimBot = [...secrets].find(([, s]) => s.role === 'villageois')![0];
+  const [vx, vz] = ahead(1.3);
+  await wait(2000);
+  botPose(victimBot, vx, vz);
+  await page.keyboard.press('Digit2');
+  await look(vx, vz);
+  // délai du tueur après la réunion
+  await page.waitForFunction(`window.__village.net.secret.killReadyAt <= Date.now() + window.__village.net.clockOffset`, null, { timeout: 40_000 });
+  await wait(1500);
+  console.log('couteau en main :', await ev(`window.__village.online.item`), '| actions :', await text('.prompts'));
+  await shot('11a-couteau');
+  await ev(`window.__village.online.attack()`);
+  await wait(2500);
+  console.log('victime au couteau :', await ev(`window.__village.net.game.alive[${JSON.stringify(ids.get(victimBot))}] === false`), '| corps :', await ev(`window.__village.net.game.bodies.length`));
+  await shot('11b-corps');
+  // fin : le robot shérif abat l'hôte
+  const sb = sheriffBot!;
+  const sp = (await poses())[ids.get(sb)!];
+  botPose(sb, sp.x, sp.z, Math.atan2(host.x - sp.x, host.z - sp.z), 'pistolet');
+  await wait(300);
+  console.log('tir du robot :', JSON.stringify(await new Promise((r) => sb.emit('jeu:tirer', { target: hostId }, r))));
+} else {
+  const sb = sheriffBot!;
+  const sp = (await poses())[ids.get(sb)!];
+  const kp = (await poses())[killerId];
+  botPose(sb, sp.x, sp.z, Math.atan2(kp.x - sp.x, kp.z - sp.z), 'pistolet');
+  await wait(300);
+  console.log('tir du robot shérif :', JSON.stringify(await new Promise((r) => sb.emit('jeu:tirer', { target: killerId }, r))));
+}
 await page.waitForFunction(`document.querySelector('.results.open')`, null, { timeout: 10_000 });
 await wait(800);
 console.log('résultats :', (await text('.res-box h2')).trim(), '|', await text('.res-reason'), '|', await text('.res-me'));

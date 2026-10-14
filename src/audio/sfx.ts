@@ -101,6 +101,24 @@ export const sfx = {
       // écho sur les façades
       noise(b, b.sfx, 'lowpass', 1400, 0.6, 0.25, 0.02, 1.6, b.ctx.currentTime + 0.12);
     }),
+  /** couteau qui fend l'air */
+  swing: () => play((b) => noise(b, b.sfx, 'bandpass', 2600, 1.4, 0.12, 0.02, 0.16)),
+  /** coup porté (atténué avec la distance pour les autres joueurs) */
+  stab: (gain = 1) =>
+    play((b) => {
+      if (gain <= 0.02) return;
+      const out = spatial(b, 0, gain);
+      noise(b, out, 'lowpass', 700, 0.8, 0.5, 0.003, 0.14);
+      tone(b, out, 'sine', 110, 55, 0.4, 0.003, 0.18);
+    }),
+  /** arme sortie ou rangée */
+  draw: () =>
+    play((b) => {
+      noise(b, b.sfx, 'highpass', 4000, 1.2, 0.08, 0.005, 0.12);
+      tone(b, b.sfx, 'triangle', 1800, 2400, 0.03, 0.004, 0.08);
+    }),
+  /** pistolet vide */
+  dryFire: () => play((b) => tone(b, b.sfx, 'square', 1500, 1400, 0.06, 0.001, 0.03)),
   /** cloche de l'église : partiels inharmoniques, longue résonance */
   bell: () =>
     play((b) => {

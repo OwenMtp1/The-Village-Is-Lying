@@ -36,6 +36,9 @@ export function aimTorch(torches: Flashlights, ch: Character, cam: PlayerCamera,
   torches.setLocal(true, from, target.sub(from).normalize());
 }
 
+/** vitesse du vol libre (m/s) */
+const NOCLIP_SPEED = 7;
+
 interface Npc {
   ch: Character;
   path: [number, number][];
@@ -92,6 +95,8 @@ export class Game {
   frozen = false;
   /** lampe de poche du joueur allumée */
   torch = false;
+  /** vol libre à travers les murs (touche N, exploration solo seulement) */
+  noclip = false;
   /** début de la partie (horloge du navigateur, s) : cycle du jour */
   private startedAt = 0;
 
@@ -142,6 +147,7 @@ export class Game {
     });
     this.startedAt = performance.now() / 1000;
     this.torch = false;
+    this.noclip = false;
     const v = this.player.animator.base.variant;
     this.info = { seed, player: { id: 'joueur', variant: v.id, firstName: v.firstName }, appearances };
     this.input.flush();
@@ -168,10 +174,26 @@ export class Game {
     const m = inp.takeMouse();
     if (!this.frozen) this.cam.look(m.dx, m.dy, m.wheel);
     if (!this.frozen && inp.consume('KeyV')) this.cam.toggle(p);
-    const cmd = readMove(inp, this.cam, this.frozen);
-    p.update(dt, cmd, this.cam.mode === 'subjective' ? this.cam.yaw : null);
+    if (!this.frozen && inp.consume('KeyN')) this.noclip = !this.noclip;
+    if (this.noclip) {
+      // vol dans la direction du regard (tangage compris), Espace / C pour monter / descendre, Maj : ×3
+      const f = this.frozen ? 0 : (inp.held('KeyW') || inp.held('ArrowUp') ? 1 : 0) - (inp.held('KeyS') || inp.held('ArrowDown') ? 1 : 0);
+      const r = this.frozen ? 0 : (inp.held('KeyD') || inp.held('ArrowRight') ? 1 : 0) - (inp.held('KeyA') || inp.held('ArrowLeft') ? 1 : 0);
+      const u = this.frozen ? 0 : (inp.held('Space') ? 1 : 0) - (inp.held('KeyC') || inp.held('ControlLeft') ? 1 : 0);
+      const dir = lookDir(this.cam.yaw, this.cam.pitch);
+      const right = new THREE.Vector3(-Math.cos(this.cam.yaw), 0, Math.sin(this.cam.yaw));
+      const v = dir.multiplyScalar(f).addScaledVector(right, r);
+      v.y += u;
+      if (v.lengthSq() > 1) v.normalize();
+      const speed = NOCLIP_SPEED * (inp.held('ShiftLeft') || inp.held('ShiftRight') ? 3 : 1);
+      p.fly(dt, v.x * speed, v.y * speed, v.z * speed, this.cam.yaw);
+    } else {
+      const cmd = readMove(inp, this.cam, this.frozen);
+      p.update(dt, cmd, this.cam.mode === 'subjective' ? this.cam.yaw : null);
+    }
     if (!this.frozen && inp.consume('KeyL')) this.toggleTorch();
     for (const n of this.npcs) this.updateNpc(n, dt);
+    this.cam.noCollide = this.noclip;
     this.cam.update(dt, p, this.village.collision);
     aimTorch(this.torches, p, this.cam, this.torch);
     // les villageois sortent leur lampe quand il fait sombre

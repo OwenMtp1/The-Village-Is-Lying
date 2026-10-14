@@ -7,14 +7,20 @@ import { ROLES, campOf, totalOf, type Composition, type Role } from './roles';
 export const RULES = {
   /** portée d'une élimination, d'un tir, d'une enquête, d'un signalement de corps (m) */
   killRange: 2.2,
-  shootRange: 14,
+  shootRange: 25,
+  /** angle maximal entre le regard et la victime (rad) : on poignarde devant soi, on tire où l'on vise */
+  stabAngle: 1.0,
+  aimAngle: 0.4,
+  /** distance à laquelle on voit un coup de couteau, un tir (animation de l'arme chez les autres) */
+  stabSeenRange: 30,
+  shotSeenRange: 90,
   investigateRange: 3,
   reportRange: 3.5,
   /** délai de recharge propre à chaque tueur (s) ; le premier meurtre est possible après `firstKillDelay` */
   killCooldown: 25,
   firstKillDelay: 15,
   /** balles par shérif, enquêtes par détective (individuelles) */
-  sheriffAmmo: 1,
+  sheriffAmmo: 4,
   detectiveUses: 1,
   /** un shérif qui abat un innocent est éliminé à son tour */
   sheriffDiesOnMistake: true,
