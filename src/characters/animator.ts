@@ -119,6 +119,9 @@ export class CharacterAnimator {
   aimTarget: THREE.Vector3 | null = null;
   /** visée épaulée (clic droit), de 0 à 1 */
   ads = 0;
+  /** accessoires de nuit montés sur l'arme : lampe et laser */
+  gunTorch = false;
+  gunLaser = false;
   /** rechargement en cours : avancement de 0 à 1 (null : pas de rechargement) */
   reloading: number | null = null;
   /** réarmement (pompe, culasse) après un coup */
@@ -223,6 +226,15 @@ export class CharacterAnimator {
     this.torch.visible = item === 'lampe';
     this.knife.visible = item === 'couteau';
     for (const [k, g] of Object.entries(this.guns)) g.group.visible = k === item;
+    this.mountAccessories();
+  }
+
+  /** Affiche la lampe et le laser sur l'arme en main selon `gunTorch` / `gunLaser`. */
+  mountAccessories() {
+    for (const g of Object.values(this.guns)) {
+      g.torch.visible = this.gunTorch;
+      g.laser.visible = this.gunLaser;
+    }
   }
 
   private get gun(): GunRig | null {
@@ -246,6 +258,14 @@ export class CharacterAnimator {
     const g = this.gun;
     if (!g) return this.handPosition(out);
     return out.copy(g.muzzle).applyMatrix4(g.group.matrixWorld);
+  }
+
+  /** Départ (monde) du faisceau de la lampe ou du laser montés sur l'arme ; null sans arme. */
+  gunAccessory(which: 'torch' | 'laser', out = new THREE.Vector3()): THREE.Vector3 | null {
+    const g = this.gun;
+    if (!g) return null;
+    this.root.updateMatrixWorld(true);
+    return out.copy(which === 'torch' ? g.torchFrom : g.laserFrom).applyMatrix4(g.group.matrixWorld);
   }
 
   /** Position (monde) de la main droite : départ du faisceau de la lampe. */

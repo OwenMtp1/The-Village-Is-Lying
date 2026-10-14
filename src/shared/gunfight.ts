@@ -22,6 +22,8 @@ export interface GFSettings {
   /** armes : au choix parmi `weapons` (libre), ou imposées par le nombre d'éliminations (progression) */
   arsenal: GFArsenal;
   weapons: GFWeapon[];
+  /** partie de nuit : lampes et lasers montés sur les armes */
+  night: boolean;
   /** carte (partie du village) */
   map: GFMapId;
   /** places dans la salle */
@@ -107,7 +109,7 @@ export const GF_RULES = {
   limits: { players: [2, 16], score: [5, 100], minutes: [2, 30] } as const,
 };
 
-export const GF_DEFAULT: GFSettings = { mode: 'ffa', arsenal: 'libre', weapons: ['pistolet', 'fusil', 'pompe', 'precision', 'couteau'], map: 'village', maxPlayers: 8, scoreLimit: 20, minutes: 8 };
+export const GF_DEFAULT: GFSettings = { mode: 'ffa', night: false, arsenal: 'libre', weapons: ['pistolet', 'fusil', 'pompe', 'precision', 'couteau'], map: 'village', maxPlayers: 8, scoreLimit: 20, minutes: 8 };
 
 export const GF_MODE_NAMES: Record<GFMode, string> = { ffa: 'Chacun pour soi', equipes: 'Match à mort par équipe' };
 export const TEAM_NAMES: Record<Team, string> = { rouge: 'Équipe Rouge', bleu: 'Équipe Bleue' };
@@ -119,6 +121,7 @@ export function cleanSettings(s: Partial<GFSettings> | undefined): GFSettings {
   return {
     mode: s?.mode === 'equipes' ? 'equipes' : 'ffa',
     arsenal: s?.arsenal === 'progression' ? 'progression' : 'libre',
+    night: s?.night === true,
     weapons: (() => {
       const w = SLOTS.filter((x) => Array.isArray(s?.weapons) && s!.weapons.includes(x));
       return w.length ? w : [...SLOTS];

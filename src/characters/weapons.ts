@@ -28,6 +28,12 @@ export interface GunRig {
   cycle: 'pompe' | 'culasse' | null;
   /** pièces mobiles (pompe, culasse) */
   moving: THREE.Object3D[];
+  /** accessoires de nuit : lampe sous le canon et module laser (visibles quand ils sont montés) */
+  torch: THREE.Object3D;
+  laser: THREE.Object3D;
+  /** sorties du faisceau et du laser (repère de l'arme) */
+  torchFrom: THREE.Vector3;
+  laserFrom: THREE.Vector3;
 }
 
 const mat = {
@@ -39,6 +45,8 @@ const mat = {
   brass: new THREE.MeshStandardMaterial({ color: '#b08a3e', roughness: 0.35, metalness: 0.9 }),
   glass: new THREE.MeshStandardMaterial({ color: '#22384a', roughness: 0.05, metalness: 0.6, emissive: '#0b1822' }),
 };
+const lensMat = new THREE.MeshStandardMaterial({ color: '#fff6e0', emissive: '#fff3dc', emissiveIntensity: 4, roughness: 0.2 });
+const laserMat = new THREE.MeshBasicMaterial({ color: '#ff2a1a' });
 const flashMat = new THREE.MeshBasicMaterial({ color: '#ffd27a', transparent: true, opacity: 0, depthWrite: false, blending: THREE.AdditiveBlending });
 
 /** géométrie, matériau, nom éventuel (pièces animées : pompe, culasse) */
@@ -146,6 +154,17 @@ export function gunRig(kind: GunKind): GunRig {
   g.add(flash);
   g.visible = false;
   const long = kind !== 'pistolet';
+  // lampe sous le canon (près de la bouche), laser sur le flanc droit
+  const ax = long ? muzzle.x * 0.62 : 0.1;
+  const torch = new THREE.Group();
+  torch.add(new THREE.Mesh(tube(0.016, ax - 0.06, ax + 0.04, 0), mat.black), new THREE.Mesh(tube(0.017, ax + 0.04, ax + 0.05, 0), lensMat));
+  torch.position.y = long ? 0.0 : 0.012;
+  torch.visible = false;
+  const laser = new THREE.Group();
+  laser.add(new THREE.Mesh(box(0.05, 0.016, 0.016, ax - 0.02, 0), mat.dark), new THREE.Mesh(box(0.004, 0.008, 0.008, ax + 0.007, 0), laserMat));
+  laser.position.set(0, long ? 0.035 : 0.03, 0.022);
+  laser.visible = false;
+  g.add(torch, laser);
   return {
     kind,
     group: g,
@@ -159,6 +178,10 @@ export function gunRig(kind: GunKind): GunRig {
     magazine: { pistolet: new THREE.Vector3(-0.03, -0.1, 0), fusil: new THREE.Vector3(0.12, -0.12, 0), pompe: new THREE.Vector3(0.08, -0.03, 0.01), precision: new THREE.Vector3(0.07, -0.04, 0) }[kind],
     cycle: kind === 'pompe' ? 'pompe' : kind === 'precision' ? 'culasse' : null,
     moving: g.children.filter((o) => o.name === 'pompe' || o.name === 'culasse'),
+    torch,
+    laser,
+    torchFrom: new THREE.Vector3(ax + 0.06, torch.position.y, 0),
+    laserFrom: new THREE.Vector3(ax + 0.01, laser.position.y, laser.position.z),
   };
 }
 

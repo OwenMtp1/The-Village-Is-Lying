@@ -43,6 +43,8 @@ export interface PlayerPose {
   pitch: number;
   /** arme en main (visible de tous) : couteau (tueurs), pistolet (shérifs) */
   item?: HeldItem;
+  /** Gunfight de nuit : laser de l'arme allumé (les autres en voient le point rouge) */
+  laser?: boolean;
 }
 
 export type HeldItem = 'couteau' | 'pistolet' | 'fusil' | 'pompe' | 'precision' | null;

@@ -212,7 +212,7 @@ export class GunfightRoom {
     s.respawnAt = 0;
     s.shieldUntil = t + GF_RULES.spawnShield * 1000;
     s.spawn = { x: p.x, y: p.y, z: p.z, yaw, n: s.spawn.n + 1 };
-    this.poses.set(id, { x: p.x, y: p.y ?? 0, z: p.z, yaw, speed: 0, grounded: true, vy: 0, dir: 1, torch: false, pitch: 0, item: this.allowed(id)[0], t });
+    this.poses.set(id, { x: p.x, y: p.y ?? 0, z: p.z, yaw, speed: 0, grounded: true, vy: 0, dir: 1, torch: this.settings.night, laser: this.settings.night, pitch: 0, item: this.allowed(id)[0], t });
     this.history.set(id, []);
   }
 
@@ -256,12 +256,13 @@ export class GunfightRoom {
       while (h.length && h[0].t < t - GF_RULES.lagMs) h.shift();
       this.history.set(id, h);
     }
-    this.poses.set(id, { x: p.x, y: p.y, z: p.z, yaw: p.yaw, speed: Math.min(p.speed, 6), grounded: !!p.grounded, vy: p.vy, dir: p.dir === -1 ? -1 : 1, torch: false, pitch: Math.max(-1.5, Math.min(1.5, p.pitch ?? 0)), item, t });
+    const night = this.settings.night;
+    this.poses.set(id, { x: p.x, y: p.y, z: p.z, yaw: p.yaw, speed: Math.min(p.speed, 6), grounded: !!p.grounded, vy: p.vy, dir: p.dir === -1 ? -1 : 1, torch: night && p.torch === true, laser: night && p.laser === true, pitch: Math.max(-1.5, Math.min(1.5, p.pitch ?? 0)), item, t });
   }
 
   posesView(): Record<string, PlayerPose> {
     const out: Record<string, PlayerPose> = {};
-    for (const [id, p] of this.poses) if (this.state.get(id)?.alive) out[id] = { x: p.x, y: p.y, z: p.z, yaw: p.yaw, speed: p.speed, grounded: p.grounded, vy: p.vy, dir: p.dir, torch: false, pitch: p.pitch, item: p.item ?? 'pistolet' };
+    for (const [id, p] of this.poses) if (this.state.get(id)?.alive) out[id] = { x: p.x, y: p.y, z: p.z, yaw: p.yaw, speed: p.speed, grounded: p.grounded, vy: p.vy, dir: p.dir, torch: p.torch, laser: p.laser, pitch: p.pitch, item: p.item ?? 'pistolet' };
     return out;
   }
 

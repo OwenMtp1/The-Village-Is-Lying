@@ -20,6 +20,8 @@ import { GF_RULES, SLOTS, WEAPONS, isGun, type GFGun, type GFShot, type GFShotRe
 import { sfx } from '../audio/sfx';
 import { LocalGF, type GFClient } from './gfNet';
 import { insideMap, mapOf, type GFMap } from '../shared/gunfightMaps';
+import { lookDir, type Flashlights } from '../characters/flashlight';
+import { rayHitBody } from '../shared/gunfight';
 import type { MiniDot } from '../ui/gfMinimap';
 
 const wrap = (a: number) => Math.atan2(Math.sin(a), Math.cos(a));
@@ -99,6 +101,11 @@ export class GunfightGame {
   private lastGood = new WeakMap<Character, { x: number; y: number; z: number }>();
   /** on bute contre la limite de la carte */
   atLimit = 0;
+  /** nuit : lampe (L) et laser (O) montés sur l'arme */
+  torchOn = true;
+  laserOn = true;
+  private laserLine: THREE.Line;
+  private dots: THREE.Sprite[] = [];
   paused = false;
   client: GFClient | null = null;
   /** retour visuel (marqueur de touche, élimination, dégâts) pour l'interface */
@@ -111,8 +118,21 @@ export class GunfightGame {
     readonly scene: THREE.Scene,
     camera: THREE.PerspectiveCamera,
     readonly input: Input,
+    readonly torches: Flashlights,
   ) {
     this.cam = new PlayerCamera(camera);
+    // le fil du laser n'est visible que par le joueur qui vise ; les autres n'en voient que le point
+    this.laserLine = new THREE.Line(
+      new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(), new THREE.Vector3(0, 0, 1)]),
+      new THREE.LineBasicMaterial({ color: '#ff2a1a', transparent: true, opacity: 0.55, blending: THREE.AdditiveBlending, depthWrite: false }),
+    );
+    this.laserLine.frustumCulled = false;
+    this.laserLine.visible = false;
+    scene.add(this.laserLine);
+  }
+
+  get night() {
+    return !!this.client?.game?.settings.night;
   }
 
   attach(client: GFClient) {
@@ -201,6 +221,10 @@ export class GunfightGame {
     this.tracers = [];
     document.body.classList.remove('aiming', 'scoped');
     this.cam.zoom = 1;
+    this.torches.off();
+    this.laserLine.visible = false;
+    for (const d of this.dots) d.visible = false;
+    this.torchOn = this.laserOn = true;
   }
 
   /** Personnages en mouvement (sons de pas). */
@@ -213,6 +237,85 @@ export class GunfightGame {
     for (const [id, r] of this.remotes) if (c.game.players[id]?.alive) out.push({ id, x: r.pos.x, y: r.pos.y, z: r.pos.z, grounded: r.grounded, local: false });
     for (const [id, b] of this.bots) if (c.game.players[id]?.alive) out.push({ id, x: b.ch.controller.x, y: b.ch.controller.y, z: b.ch.controller.z, grounded: b.ch.controller.grounded, local: false });
     return out;
+  }
+
+  /**
+   * Nuit : faisceau de la lampe du joueur (avec ombres) et des autres (les plus proches), fil du laser du joueur
+   * jusqu'à ce qu'il touche, et seulement le point rouge pour les lasers des autres.
+   */
+  private updateNight(armed: boolean) {
+    const p = this.player!;
+    if (!this.night) {
+      this.torches.off();
+      this.laserLine.visible = false;
+      for (const d of this.dots) d.visible = false;
+      return;
+    }
+    const camDir = this.cam.camera.getWorldDirection(new THREE.Vector3());
+    const aim = p.animator.aimTarget ?? this.cam.camera.position.clone().addScaledVector(camDir, 20);
+    const tf = armed && this.torchOn ? p.animator.gunAccessory('torch') : null;
+    this.torches.setLocal(!!tf, tf ?? aim, tf ? aim.clone().sub(tf).normalize() : camDir);
+    const beams: { from: THREE.Vector3; dir: THREE.Vector3 }[] = [];
+    const lasers: { from: THREE.Vector3; dir: THREE.Vector3; id: string }[] = [];
+    const g = this.client!.game!;
+    const others: [string, { anim: CharacterAnimator; yaw: number; pitch: number; torch: boolean; laser: boolean }][] = [];
+    for (const [id, r] of this.remotes) {
+      const t = r.target;
+      if (t && g.players[id]?.alive) others.push([id, { anim: r.anim, yaw: r.yaw, pitch: t.pitch, torch: !!t.torch, laser: !!t.laser }]);
+    }
+    for (const [id, b] of this.bots) if (g.players[id]?.alive) others.push([id, { anim: b.ch.animator, yaw: b.ch.yaw, pitch: b.ch.animator.aimPitch, torch: true, laser: true }]);
+    for (const [id, o] of others) {
+      const dir = lookDir(o.yaw, o.pitch);
+      const tfrom = o.torch ? o.anim.gunAccessory('torch') : null;
+      if (tfrom) beams.push({ from: tfrom, dir });
+      const lfrom = o.laser ? o.anim.gunAccessory('laser') : null;
+      if (lfrom) lasers.push({ from: lfrom, dir, id });
+    }
+    this.torches.setRemotes(beams, p.root.position);
+    // laser du joueur : le fil (lui seul le voit) et le point
+    const mine = armed && this.laserOn ? p.animator.gunAccessory('laser') : null;
+    let n = 0;
+    if (mine) {
+      const end = this.laserEnd(mine, aim.clone().sub(mine).normalize(), this.client!.me);
+      const pos = this.laserLine.geometry.attributes.position as THREE.BufferAttribute;
+      pos.setXYZ(0, mine.x, mine.y, mine.z);
+      pos.setXYZ(1, end.x, end.y, end.z);
+      pos.needsUpdate = true;
+      this.laserLine.visible = true;
+      this.dot(n++, end);
+    } else this.laserLine.visible = false;
+    for (const l of lasers) this.dot(n++, this.laserEnd(l.from, l.dir, l.id));
+    for (let i = n; i < this.dots.length; i++) this.dots[i].visible = false;
+  }
+
+  /** Bout d'un laser : premier corps (tête comprise) ou premier obstacle du décor, à 80 m au plus. */
+  private laserEnd(from: THREE.Vector3, dir: THREE.Vector3, ignore: string): THREE.Vector3 {
+    const o: Vec3 = [from.x, from.y, from.z];
+    const d: Vec3 = [dir.x, dir.y, dir.z];
+    let best = 80;
+    const test = (id: string, pos: THREE.Vector3, h: number) => {
+      if (id === ignore || !this.client?.game?.players[id]?.alive) return;
+      const r = rayHitBody(o, d, pos, h);
+      if (r && r.t < best) best = r.t;
+    };
+    if (this.player && this.alive) test(this.client!.me, this.player.root.position, this.player.height);
+    for (const [id, r] of this.remotes) test(id, r.pos, r.anim.base.variant.heightM);
+    for (const [id, b] of this.bots) test(id, b.ch.root.position, b.ch.height);
+    const w = this.village.collision;
+    for (let t = 0.3; t < best; t += 0.4) if (w.blocksPoint(from.x + dir.x * t, from.y + dir.y * t, from.z + dir.z * t, 0)) return from.clone().addScaledVector(dir, Math.max(0, t - 0.2));
+    return from.clone().addScaledVector(dir, best - 0.02);
+  }
+
+  private dot(i: number, at: THREE.Vector3) {
+    if (!this.dots[i]) {
+      const s = new THREE.Sprite(new THREE.SpriteMaterial({ map: dotTexture(), color: '#ff3020', blending: THREE.AdditiveBlending, depthWrite: false, sizeAttenuation: false, transparent: true }));
+      s.scale.setScalar(0.014);
+      s.renderOrder = 6;
+      this.scene.add(s);
+      this.dots[i] = s;
+    }
+    this.dots[i].position.copy(at);
+    this.dots[i].visible = true;
   }
 
   private randomSpawn(): [number, number] {
@@ -329,6 +432,16 @@ export class GunfightGame {
       this.switchTo(allowed[(i + (m.wheel > 0 ? 1 : -1) + allowed.length) % allowed.length]);
     }
     if (!frozen && this.input.consume('KeyR')) this.reload();
+    if (this.night && !frozen && this.input.consume('KeyL')) {
+      this.torchOn = !this.torchOn;
+      sfx.torch();
+      this.sendPoseNow();
+    }
+    if (this.night && !frozen && this.input.consume('KeyO')) {
+      this.laserOn = !this.laserOn;
+      sfx.torch();
+      this.sendPoseNow();
+    }
     const gun = isGun(this.item) ? this.item : null;
     if (alive) {
       // arme en main : le corps reste face au viseur, on se déplace dans tous les sens
@@ -354,6 +467,8 @@ export class GunfightGame {
     const moving = Math.min(1, Math.hypot(k.realVx, k.realVz) / 5);
     this.bloom = Math.max(0, this.bloom - dt * 2.5);
     this.spread = W ? (W.spread + (W.adsSpread - W.spread) * this.ads) * (1 + moving * 0.9 + (k.grounded ? 0 : 1.5)) + this.bloom * W.spread : 0;
+    p.animator.gunTorch = this.night && this.torchOn;
+    p.animator.gunLaser = this.night && this.laserOn;
     p.animator.setItem(alive ? this.item : null);
     p.animator.aimPitch = this.cam.pitch;
     p.animator.ads = this.ads;
@@ -383,6 +498,7 @@ export class GunfightGame {
       p.animator.aimTarget = this.aimTarget.copy(this.cam.camera.position).addScaledVector(dir, this.aimDist);
     } else p.animator.aimTarget = null;
     if (scoped && alive) p.root.visible = false;
+    this.updateNight(alive && !!gun);
     for (const t of this.tracers) {
       t.life -= dt;
       (t.line.material as THREE.LineBasicMaterial).opacity = Math.max(0, t.life / 0.12);
@@ -415,7 +531,7 @@ export class GunfightGame {
     if (!p || !c) return;
     this.sendAcc = 0;
     const k = p.controller;
-    c.sendPose({ x: k.x, y: k.y, z: k.z, yaw: p.yaw, speed: Math.hypot(k.realVx, k.realVz), grounded: k.grounded, vy: k.vy, dir: 1, torch: false, pitch: this.cam.pitch, item: this.item });
+    c.sendPose({ x: k.x, y: k.y, z: k.z, yaw: p.yaw, speed: Math.hypot(k.realVx, k.realVz), grounded: k.grounded, vy: k.vy, dir: 1, torch: this.night && this.torchOn, laser: this.night && this.laserOn, pitch: this.cam.pitch, item: this.item });
   }
 
   private reload() {
@@ -584,6 +700,8 @@ export class GunfightGame {
       if (r.grounded && !t.grounded) r.anim.onJump();
       if (!r.grounded && t.grounded) r.anim.onLand(6);
       r.grounded = t.grounded;
+      r.anim.gunTorch = !!t.torch;
+      r.anim.gunLaser = !!t.laser;
       r.anim.setItem(t.item ?? 'pistolet');
       r.anim.aimPitch = t.pitch;
       r.anim.aimTarget = null;
@@ -723,11 +841,12 @@ export class GunfightGame {
       if (look === null) b.aim = ch.yaw;
       if (this.confine(ch)) b.stuck += dt * 3;
       b.stuck = ch.controller.blocked && Math.hypot(cmd.x, cmd.z) > 0 ? b.stuck + dt : Math.max(0, b.stuck - dt);
+      ch.animator.gunTorch = ch.animator.gunLaser = this.night;
       ch.animator.setItem(b.weapon);
       ch.animator.aimPitch = pitch;
       ch.animator.reloading = this.reloadProgress(id, b.weapon);
       const k = ch.controller;
-      c.room.pose(id, { x: k.x, y: k.y, z: k.z, yaw: ch.yaw, speed: Math.hypot(k.realVx, k.realVz), grounded: k.grounded, vy: k.vy, dir: 1, torch: false, pitch, item: b.weapon });
+      c.room.pose(id, { x: k.x, y: k.y, z: k.z, yaw: ch.yaw, speed: Math.hypot(k.realVx, k.realVz), grounded: k.grounded, vy: k.vy, dir: 1, torch: this.night, laser: this.night, pitch, item: b.weapon });
       if (fire && tp && b.target && gun && W) {
         // visée : poitrine ou tête, avec une erreur selon la difficulté ; plombs dispersés au fusil à pompe
         const eye = new THREE.Vector3(k.x, k.y + 1.5, k.z);
@@ -769,4 +888,21 @@ function botWeapon(allowed: GFWeapon[]): GFWeapon {
   for (const g of guns) if ((r -= weight[g]) <= 0) return g;
   return guns[0];
 }
+let dotTex: THREE.Texture | null = null;
+/** Point lumineux du laser (dégradé radial). */
+function dotTexture() {
+  if (dotTex) return dotTex;
+  const c = document.createElement('canvas');
+  c.width = c.height = 32;
+  const g = c.getContext('2d')!;
+  const grd = g.createRadialGradient(16, 16, 0, 16, 16, 16);
+  grd.addColorStop(0, 'rgba(255,255,255,1)');
+  grd.addColorStop(0.25, 'rgba(255,60,40,1)');
+  grd.addColorStop(1, 'rgba(255,0,0,0)');
+  g.fillStyle = grd;
+  g.fillRect(0, 0, 32, 32);
+  dotTex = new THREE.CanvasTexture(c);
+  return dotTex;
+}
+
 const gauss = () => (Math.random() + Math.random() + Math.random() - 1.5) / 0.75;

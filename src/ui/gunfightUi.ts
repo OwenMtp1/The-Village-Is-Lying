@@ -48,6 +48,10 @@ export class GFSettingsForm {
         <button type="button" data-mode="ffa">${GF_MODE_NAMES.ffa}</button>
         <button type="button" data-mode="equipes">${GF_MODE_NAMES.equipes}</button>
       </div>
+      <div class="seg gf-daynight" role="radiogroup" aria-label="Moment">
+        <button type="button" data-night="0">☀ Jour</button>
+        <button type="button" data-night="1">☾ Nuit (lampes et lasers)</button>
+      </div>
       <div class="gf-maps" role="radiogroup" aria-label="Carte">
         ${GF_MAPS.map((m) => `<button type="button" class="gf-map" data-map="${m.id}" title="${esc(m.desc)}"><span class="gf-prev"></span><b>${esc(m.name)}</b><small>${esc(m.desc)}</small><em>${esc(m.size)} joueurs</em></button>`).join('')}
       </div>
@@ -67,6 +71,7 @@ export class GFSettingsForm {
       sfx.click();
       if (b.dataset.mode) this.value = { ...this.value, mode: b.dataset.mode as GFMode };
       if (b.dataset.map) this.value = { ...this.value, map: b.dataset.map as GFMapId };
+      if (b.dataset.night) this.value = { ...this.value, night: b.dataset.night === '1' };
       if (b.dataset.arsenal) this.value = { ...this.value, arsenal: b.dataset.arsenal as GFArsenal };
       if (b.dataset.wep) {
         const w = b.dataset.wep as GFWeapon;
@@ -102,6 +107,8 @@ export class GFSettingsForm {
       const slot = b.querySelector('.gf-prev')!;
       if (!slot.firstChild) slot.append(mapPreview(mapOf(b.dataset.map)));
     }
+    for (const b of this.el.querySelectorAll<HTMLElement>('[data-night]')) b.classList.toggle('on', (b.dataset.night === '1') === this.value.night);
+    this.el.querySelector('.gf-maps')!.classList.toggle('night', this.value.night);
     for (const b of this.el.querySelectorAll<HTMLElement>('[data-arsenal]')) b.classList.toggle('on', b.dataset.arsenal === this.value.arsenal);
     const libre = this.value.arsenal === 'libre';
     (this.el.querySelector('.gf-weps') as HTMLElement).hidden = !libre;
@@ -281,7 +288,7 @@ export class GFLobbyScreen {
     }
     const host = !!L.players.find((p) => p.id === me)?.host;
     this.el.querySelector('.lcode')!.textContent = L.code;
-    this.el.querySelector('.lcount')!.innerHTML = `<b>${L.players.length}</b> / ${L.settings.maxPlayers}<small>${GF_MODE_NAMES[L.settings.mode]} · ${esc(mapOf(L.settings.map).name)}</small>`;
+    this.el.querySelector('.lcount')!.innerHTML = `<b>${L.players.length}</b> / ${L.settings.maxPlayers}<small>${GF_MODE_NAMES[L.settings.mode]} · ${esc(mapOf(L.settings.map).name)}${L.settings.night ? ' de nuit' : ''} · ${ARSENAL_NAMES[L.settings.arsenal]}</small>`;
     const row = (p: GFLobbyView['players'][number]) =>
       `<li class="seat${p.id === me ? ' me' : ''}${p.connected ? '' : ' off'}"><span class="avatar">${esc(p.name.slice(0, 1).toUpperCase())}</span><span class="seat-name">${esc(p.name)}${p.id === me ? ' <em>(vous)</em>' : ''}<small>${p.host ? 'hôte' : p.connected ? 'prêt à combattre' : 'déconnecté'}</small></span><span class="seat-state">${p.host ? ICON.couronne : ''}</span></li>`;
     const playersEl = this.el.querySelector('.gf-players') as HTMLElement;
@@ -331,7 +338,7 @@ export class GFHud {
       <ol class="gf-slots"></ol>
       <div class="gf-dead"><div><h2>Éliminé</h2><p class="gf-by"></p><p class="gf-respawn"></p></div></div>
       <div class="gf-board" hidden></div>
-      <div class="controls-help"><span><kbd>Clic</kbd> tirer / frapper</span><span><kbd>Clic droit</kbd> viser</span><span><kbd>R</kbd> recharger</span><span><kbd>1</kbd>…<kbd>5</kbd> / molette : armes</span><span><kbd>Tab</kbd> scores</span><span><kbd>Échap</kbd> menu</span></div>
+      <div class="controls-help"><span><kbd>Clic</kbd> tirer / frapper</span><span><kbd>Clic droit</kbd> viser</span><span><kbd>R</kbd> recharger</span><span><kbd>1</kbd>…<kbd>5</kbd> / molette : armes</span><span class="gf-night-keys"><kbd>L</kbd> lampe <kbd>O</kbd> laser</span><span><kbd>Tab</kbd> scores</span><span><kbd>Échap</kbd> menu</span></div>
     </div>`);
     this.el.append(this.minimap.el);
     window.addEventListener('keydown', (e) => {
@@ -451,6 +458,7 @@ export class GFHud {
     cross.style.setProperty('--gap', `${Math.round(Math.min(80, Math.max(3, spreadPx)))}px`);
     cross.classList.toggle('knife', !isGun(item));
     this.el.classList.toggle('scoped', scoped);
+    this.el.classList.toggle('night', G.settings.night);
     // mort
     const dead = this.el.querySelector('.gf-dead') as HTMLElement;
     dead.classList.toggle('open', !!st && !st.alive && G.phase === 'jeu');

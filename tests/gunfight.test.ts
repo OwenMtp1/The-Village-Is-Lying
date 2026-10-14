@@ -51,7 +51,7 @@ function fire(room: GunfightRoom, a: string, b: string | null, weapon: GFGun = '
 }
 
 test('réglages bornés ; au moins 2 joueurs ; on ne rejoint pas une partie commencée', () => {
-  assert.deepEqual(cleanSettings({ maxPlayers: 99, scoreLimit: 1, minutes: 0, mode: 'x' as never }), { mode: 'ffa', arsenal: 'libre', weapons: ['pistolet', 'fusil', 'pompe', 'precision', 'couteau'], map: 'village', maxPlayers: 16, scoreLimit: 5, minutes: 2 });
+  assert.deepEqual(cleanSettings({ maxPlayers: 99, scoreLimit: 1, minutes: 0, mode: 'x' as never }), { mode: 'ffa', arsenal: 'libre', weapons: ['pistolet', 'fusil', 'pompe', 'precision', 'couteau'], night: false, map: 'village', maxPlayers: 16, scoreLimit: 5, minutes: 2 });
   const { room, ids } = setup({ maxPlayers: 4 }, 1);
   assert.throws(() => room.start(ids[0]), /au moins 2/);
   room.join('B', 'F');
@@ -344,4 +344,16 @@ test('progression : couteau au départ, arme suivante à chaque palier, jusqu’
   assert.equal(room.stateOf(a)!.kills, step);
   assert.equal(room.posesView()[a].item, 'pistolet');
   assert.ok(out.events.some((e) => /Nouvelle arme : Pistolet/.test(e)));
+});
+
+test('nuit : lampe et laser transmis aux autres seulement dans une partie de nuit', () => {
+  for (const night of [false, true]) {
+    const { room, ids, clock } = setup({ mode: 'ffa', night });
+    room.start(ids[0]);
+    clock.advance(30);
+    room.pose(ids[0], { ...pose(0, 0), torch: true, laser: true });
+    const v = room.posesView()[ids[0]];
+    assert.equal(v.torch, night);
+    assert.equal(v.laser, night);
+  }
 });

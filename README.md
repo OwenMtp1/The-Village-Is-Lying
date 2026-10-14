@@ -107,6 +107,11 @@ les cinquièmes du score visé (le serveur refuse toute autre arme). 2 s d'invin
 (« Protégé »), perdue dès qu'on tire. Fin de partie : bannière « Partie terminée — Victoire ! / Défaite » avant
 le tableau des scores.
 
+**Nuit** (au choix à la création) : la carte est plongée dans la nuit et chaque arme porte une lampe sous le
+canon (`L` pour l'éteindre ou la rallumer) et un laser (`O`). Le fil du laser n'est visible que par celui qui vise ;
+les autres n'en voient que le point rouge, là où il touche (décor ou personnage). Les faisceaux des joueurs
+proches éclairent la scène ; le serveur ne transmet lampes et lasers que dans une partie de nuit.
+
 **Cartes** (au choix, avec aperçu du plan à la création de la salle ou en solo) : *Le Village* (tout), *Les Souterrains* (galeries et
 salles à 8 m sous terre), *Le Quartier des Tisserands* (rues serrées entre les maisons), *La Place du Marché*
 (petite arène), *L'Église et le Cimetière*, *La Ferme des Brumes* (grange, écuries, champs : longues distances),

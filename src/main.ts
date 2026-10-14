@@ -197,7 +197,7 @@ soloHud.innerHTML = `<div class="who"><img alt=""><div><div class="mm-kicker">Ex
 document.body.appendChild(soloHud);
 
 // ── mode Gunfight ──
-const gfGame = new GunfightGame(village, view.scene, view.camera, input);
+const gfGame = new GunfightGame(village, view.scene, view.camera, input, torches);
 let gfCtl: GunfightController;
 const gameUi = new GameUi({
   gunfight: {
@@ -304,7 +304,7 @@ settings.subscribe((s) => {
 // ── cycle du jour, inventaire (lampe de poche), sons et vie du décor ──
 const elapsed = () => (mode === 'online' ? online.elapsed : mode === 'solo' ? game.elapsed : 0);
 // Gunfight : en plein jour (on voit ses adversaires)
-view.daylightSource = () => (mode === 'gunfight' ? 1 : mode === 'online' || mode === 'solo' ? dayState(elapsed()).light : 0);
+view.daylightSource = () => (mode === 'gunfight' ? (gfGame.night ? 0 : 1) : mode === 'online' || mode === 'solo' ? dayState(elapsed()).light : 0);
 view.afterAtmosphere = (dt, daylight) => {
   life.update(dt, daylight, view.renderer.domElement.height);
   ambience.set(daylight, mode !== 'inspection');

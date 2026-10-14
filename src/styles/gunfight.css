@@ -136,3 +136,8 @@ tr.me td { color: var(--gold-2); }
 @keyframes gf-end-line { to { transform: scaleX(1); } }
 @keyframes gf-end-out { to { opacity: 0; transform: translateY(-40px) scale(0.9); } }
 @media (prefers-reduced-motion: reduce) { .gf-end, .gf-end * , .gf-res-late { animation-duration: 0.01s !important; animation-delay: 0s !important; } .gf-end { display: none; } }
+
+.gf-daynight { margin-top: 8px; }
+.gf-maps.night .gf-prev canvas { filter: brightness(0.45) saturate(0.6) hue-rotate(190deg); }
+.gf-night-keys { display: none; }
+.gf-hud.night .gf-night-keys { display: inline; }
