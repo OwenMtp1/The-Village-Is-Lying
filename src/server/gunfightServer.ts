@@ -5,7 +5,7 @@
  */
 import { randomBytes, randomInt } from 'node:crypto';
 import type { Server, Socket } from 'socket.io';
-import { GFError, GunfightRoom } from '../shared/gunfightRoom';
+import { GFError, GunfightRoom, type Solid } from '../shared/gunfightRoom';
 import type { Ack, ClientToServer, ServerToClient } from '../shared/protocol';
 
 type IO = Server<ClientToServer, ServerToClient>;
@@ -13,7 +13,7 @@ type Sight = (a: { x: number; y: number; z: number }, b: { x: number; y: number;
 
 const cryptoRandom = () => randomInt(0, 2 ** 31) / 2 ** 31;
 
-export function gunfightServer(io: IO, sight: Sight, newCode: (taken: (c: string) => boolean) => string, random: () => number = cryptoRandom) {
+export function gunfightServer(io: IO, sight: Sight, newCode: (taken: (c: string) => boolean) => string, random: () => number = cryptoRandom, solid?: Solid) {
   const rooms = new Map<string, GunfightRoom>();
   const channel = (code: string) => `gf:${code}`;
   void randomBytes;
@@ -23,6 +23,7 @@ export function gunfightServer(io: IO, sight: Sight, newCode: (taken: (c: string
     game: (v: Parameters<ServerToClient['gf:etat']>[0]) => io.to(channel(code)).emit('gf:etat', v),
     shot: (s: Parameters<ServerToClient['gf:tir']>[0]) => io.to(channel(code)).emit('gf:tir', s),
     event: (e: Parameters<ServerToClient['gf:evenement']>[0]) => io.to(channel(code)).emit('gf:evenement', e),
+    grenade: (g: Parameters<ServerToClient['gf:grenade']>[0]) => io.to(channel(code)).emit('gf:grenade', g),
   });
 
   function onConnection(socket: Socket<ClientToServer, ServerToClient>) {
@@ -60,7 +61,7 @@ export function gunfightServer(io: IO, sight: Sight, newCode: (taken: (c: string
       guard(ack, () => {
         leave(true);
         const code = newCode((c) => rooms.has(c));
-        const r = new GunfightRoom(code, p?.settings, output(code), Date.now, random, sight);
+        const r = new GunfightRoom(code, p?.settings, output(code), Date.now, random, sight, solid);
         const m = r.join(p?.name, p?.sex);
         rooms.set(code, r);
         attach(r, m.id);
@@ -86,6 +87,8 @@ export function gunfightServer(io: IO, sight: Sight, newCode: (taken: (c: string
     socket.on('gf:tir', (p, ack) => guard(ack, () => need().shoot(pid, p?.weapon, p?.origin, p?.dirs, Array.isArray(p?.ends) ? p.ends : [])));
     socket.on('gf:couteau', (p, ack) => guard(ack, () => need().stab(pid, String(p?.target))));
     socket.on('gf:recharger', (p, ack) => guard(ack, () => need().reload(pid, p?.weapon)));
+    socket.on('gf:grenade', (p, ack) => guard(ack, () => need().throwGrenade(pid, p?.kind, p?.origin, p?.vel)));
+    socket.on('gf:equipement', (p, ack) => guard(ack, () => need().setLoadout(pid, p?.loadout ?? {})));
     socket.on('disconnect', () => leave(room?.phase === 'salon'));
   }
 

@@ -1,8 +1,8 @@
 /** Mode Gunfight : salon, équipes, tirs revérifiés, dégâts, réapparition, score, fin à l'heure, retour au salon. */
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { GunfightRoom, type GFOutput } from '../src/shared/gunfightRoom';
-import { GF_RULES, PROGRESSION, WEAPONS, allowedWeapons, cleanSettings, damageAt, progressionStep, normalize, rayHitBody, type GFGun, type GFShot } from '../src/shared/gunfight';
+import { GunfightRoom, grenadePath, type GFOutput } from '../src/shared/gunfightRoom';
+import { GF_RULES, GRENADES, PROGRESSION, WEAPONS, allowedWeapons, cleanSettings, damageAt, progressionStep, normalize, rayHitBody, type GFGun, type GFShot } from '../src/shared/gunfight';
 import type { PlayerPose } from '../src/shared/protocol';
 import { GF_MAPS, insideMap, mapOf } from '../src/shared/gunfightMaps';
 
@@ -51,7 +51,8 @@ function fire(room: GunfightRoom, a: string, b: string | null, weapon: GFGun = '
 }
 
 test('réglages bornés ; au moins 2 joueurs ; on ne rejoint pas une partie commencée', () => {
-  assert.deepEqual(cleanSettings({ maxPlayers: 99, scoreLimit: 1, minutes: 0, mode: 'x' as never }), { mode: 'ffa', arsenal: 'libre', weapons: ['pistolet', 'fusil', 'pompe', 'precision', 'couteau'], night: false, map: 'village', maxPlayers: 16, scoreLimit: 5, minutes: 2 });
+  const c = cleanSettings({ maxPlayers: 99, scoreLimit: 1, minutes: 0, mode: 'x' as never });
+  assert.deepEqual([c.mode, c.arsenal, c.night, c.grenades, c.map, c.maxPlayers, c.scoreLimit, c.minutes, c.weapons.length], ['ffa', 'libre', false, true, 'village', 16, 5, 2, 11]);
   const { room, ids } = setup({ maxPlayers: 4 }, 1);
   assert.throws(() => room.start(ids[0]), /au moins 2/);
   room.join('B', 'F');
@@ -103,6 +104,7 @@ test('tir à la tête : dégâts multipliés, signalé, compté ; le fusil de pr
   const { room, out, ids, clock } = setup({ mode: 'ffa' });
   room.start(ids[0]);
   const [a, b] = ids;
+  room.setLoadout(a, { primary: 'precision', secondary: 'pistolet' });
   face(room, clock, a, b, 12);
   clock.advance(GF_RULES.spawnShield);
   const r = fire(room, a, b, 'pistolet', 'tete');
@@ -127,6 +129,7 @@ test('fusil à pompe : plusieurs plombs, dégâts cumulés ; pas plus de plombs 
   const { room, out, ids, clock } = setup({ mode: 'ffa' });
   room.start(ids[0]);
   const [a, b] = ids;
+  room.setLoadout(a, { primary: 'pompe' });
   face(room, clock, a, b, 4, 'pompe');
   clock.advance(GF_RULES.spawnShield);
   const r = fire(room, a, b, 'pompe', 'corps', 0, 30);
@@ -304,7 +307,7 @@ test('invincibilité de 2 s à l’apparition', () => {
 test('armes au choix : seules les armes cochées se sortent et tirent', () => {
   const s = cleanSettings({ weapons: ['fusil', 'couteau'] });
   assert.deepEqual(allowedWeapons(s, 0), ['fusil', 'couteau']);
-  assert.deepEqual(cleanSettings({ weapons: [] }).weapons.length, 5, 'jamais aucune arme');
+  assert.deepEqual(cleanSettings({ weapons: [] }).weapons.length, 11, 'jamais aucune arme');
   const { room, ids, clock } = setup({ mode: 'ffa', weapons: ['fusil'] });
   room.start(ids[0]);
   const [a, b] = ids;
@@ -356,4 +359,61 @@ test('nuit : lampe et laser transmis aux autres seulement dans une partie de nui
     assert.equal(v.torch, night);
     assert.equal(v.laser, night);
   }
+});
+
+test('équipement : arme principale et secondaire au choix, tout de suite à l’apparition, sinon à la suivante', () => {
+  const { room, ids, clock } = setup({ mode: 'ffa' });
+  room.start(ids[0]);
+  const [a] = ids;
+  assert.deepEqual(room.allowed(a), ['fusil', 'pistolet', 'couteau'], 'par défaut : carabine et pistolet');
+  room.setLoadout(a, { primary: 'mitrailleuse', secondary: 'revolver' });
+  assert.deepEqual(room.allowed(a), ['mitrailleuse', 'revolver', 'couteau'], 'pendant la protection : immédiat');
+  room.setLoadout(a, { primary: 'pistolet' as never });
+  assert.equal(room.allowed(a)[0], 'fusil', 'une arme secondaire ne va pas en principale');
+  clock.advance(GF_RULES.spawnShield + 1);
+  room.setLoadout(a, { primary: 'tactique', secondary: 'pm' });
+  assert.equal(room.allowed(a)[0], 'fusil', 'en cours de vie : à la prochaine apparition');
+  assert.equal(room.gameView().players[a].loadout.primary, 'tactique', 'le choix est affiché');
+});
+
+test('grenades : trajectoire avec rebonds, éclats à couvert ou non, aveuglement selon le regard, fumée', () => {
+  // le sol arrête la chute, un mur à x = 5 renvoie la grenade
+  const solid = (x: number, y: number) => y < 0 || x > 5;
+  const path = grenadePath([0, 1.5, 0], [10, 3, 0], 2, solid);
+  const end = path[path.length - 1];
+  assert.ok(end[0] < 5 && end[1] >= 0 && end[1] < 0.5, `au sol devant le mur : ${end.map((v) => v.toFixed(2))}`);
+  // en partie : grenade aux pieds de b (5 m), a regarde ailleurs
+  let wall = false;
+  const { room, ids, clock } = setup({ mode: 'ffa' }, 3, () => !wall);
+  room.start(ids[0]);
+  const [a, b, c] = ids;
+  clock.advance(30);
+  room.pose(a, pose(0, 0, Math.PI));
+  room.pose(b, pose(0, 5, Math.PI)); // b regarde vers a (et vers la grenade)
+  room.pose(c, pose(40, 40, 0));
+  clock.advance(GF_RULES.spawnShield);
+  const g = room.throwGrenade(a, 'frag', [0, 1.5, 0], [0, 1, 2.2]);
+  assert.equal(room.stateOf(a)!.grenades.frag, GRENADES.frag.count - 1);
+  clock.advance(GRENADES.frag.fuse + 0.1);
+  room.tick();
+  const at = g.path[g.path.length - 1];
+  assert.ok(room.stateOf(b)!.hp < GF_RULES.health, `b touché (grenade à ${at.map((v) => v.toFixed(1))}, vie ${room.stateOf(b)!.hp})`);
+  assert.equal(room.stateOf(c)!.hp, GF_RULES.health, 'loin : intact');
+  assert.throws(() => room.throwGrenade(a, 'frag', [0, 1.5, 0], [0, 0, 1]) && room.throwGrenade(a, 'frag', [0, 1.5, 0], [0, 0, 1]), /Plus de/);
+  // aveuglante : b la regarde, a lui tourne le dos
+  room.throwGrenade(a, 'flash', [0, 1.5, 0], [0, 1, 2]);
+  clock.advance(GRENADES.flash.fuse + 0.1);
+  room.tick();
+  const blind = (id: string) => room.stateOf(id)!.blindUntil - room.gameView().serverNow;
+  assert.ok(blind(b) > 1500, `b aveuglé ${blind(b)} ms`);
+  assert.ok(blind(b) > blind(a), 'qui regarde l’éclair est aveuglé plus longtemps');
+  // fumigène : un nuage apparaît puis se dissipe
+  room.throwGrenade(a, 'fumee', [0, 1.5, 0], [0, 1, 2]);
+  clock.advance(GRENADES.fumee.fuse + 0.1);
+  room.tick();
+  assert.equal(room.gameView().smokes.length, 1);
+  clock.advance(GRENADES.fumee.seconds + 0.1);
+  room.tick();
+  assert.equal(room.gameView().smokes.length, 0);
+  void wall;
 });

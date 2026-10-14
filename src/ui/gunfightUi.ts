@@ -5,7 +5,7 @@
  * marqueur de touche et de tir à la tête, lunette, écran de mort, tableau des scores sur Tab) et résultats.
  */
 import type { Sex } from '../characters/catalog';
-import { ARSENAL_NAMES, GF_DEFAULT, GF_MODE_NAMES, GF_RULES, PROGRESSION, SLOTS, progressionStep, progressionTier, type GFArsenal, TEAM_NAMES, WEAPONS, WEAPON_NAMES, isGun, type GFWeapon, type GFGameView, type GFLobbyView, type GFMode, type GFSettings, type Team } from '../shared/gunfight';
+import { ARSENAL_NAMES, GRENADES, GRENADE_KINDS, PRIMARIES, SECONDARIES, type GFLoadout, GF_DEFAULT, GF_MODE_NAMES, GF_RULES, PROGRESSION, SLOTS, progressionStep, progressionTier, type GFArsenal, TEAM_NAMES, WEAPONS, WEAPON_NAMES, isGun, type GFWeapon, type GFGameView, type GFLobbyView, type GFMode, type GFSettings, type Team } from '../shared/gunfight';
 import { STATIC, OFFLINE_MESSAGE } from '../client/net';
 import { sfx } from '../audio/sfx';
 import { esc, h, onClick } from './dom';
@@ -16,8 +16,15 @@ import { profile } from './profile';
 
 const wsvg = (d: string) => `<svg class="ic gf-wic" viewBox="0 0 48 16" aria-hidden="true"><path d="${d}" fill="currentColor"/></svg>`;
 /** silhouettes des armes (fil des éliminations, barre d'armes) */
-export const WEAPON_ICON: Record<GFWeapon, string> = {
+export const WEAPON_ICON: Record<GFWeapon | 'grenade', string> = {
   pistolet: wsvg('M14 3h20v4H22l-1 2h-3l-1 6h-5l2-8h0z'),
+  revolver: wsvg('M12 4h26v3H24v2h-6l-2 7h-5l2-8h-1z'),
+  pm: wsvg('M12 3h22v4H24l-1 2h-2l-1 7h-4l1-7h-2l-1 4h-3z'),
+  mitraillette: wsvg('M4 5h6l2 1h24v3H24v6h-4V9h-2l-1 4h-3l1-4H12l-6 2H4z'),
+  assaut: wsvg('M2 6l8-1h30v3H26l-1 1 2 6h-4l-2-5h-2l-1 4h-3l1-4H8L4 11H2z'),
+  tactique: wsvg('M2 6l8-1h6V3h10v2h20v2H26v6h-3V9h-3l-1 4h-3l1-4H8l-4 3H2z'),
+  mitrailleuse: wsvg('M2 6l8-1h36v3H28l3 6h-2l-3-5h-4v4h-6V9h-4l-1 4h-3l1-4H8l-4 3H2z'),
+  grenade: '<svg class="ic gf-wic" viewBox="0 0 48 16" aria-hidden="true"><ellipse cx="24" cy="9.5" rx="5" ry="6" fill="currentColor"/><rect x="21.5" y="1.5" width="5" height="3" fill="currentColor"/><path d="M27 3h5v1.6h-5z" fill="currentColor"/></svg>',
   fusil: wsvg('M2 6l8-1h28v3H24l-2 5h-4l1-4h-3l-1 4h-3l1-4H8L4 11H2z'),
   pompe: wsvg('M2 6l9-1h35v2H12v2h20v2H14l-2 3H8l2-4H6l-3 3H2z'),
   precision: wsvg('M2 6l8-1h8V2h12v3h18v2H20v2l-3 4h-3l2-4H8l-4 3H2z'),
@@ -62,6 +69,7 @@ export class GFSettingsForm {
       <div class="gf-weps" role="group" aria-label="Armes autorisées">
         ${SLOTS.map((w) => `<button type="button" class="gf-wep" data-wep="${w}">${WEAPON_ICON[w]}<span>${esc(WEAPON_NAMES[w])}</span></button>`).join('')}
       </div>
+      <div class="gf-weps"><button type="button" class="gf-wep gf-nade-toggle" data-nades="1">${WEAPON_ICON.grenade}<span>Grenades et équipement tactique (G, F, C)</span></button></div>
       ${opts.players === false ? '' : stepper('maxPlayers', 'Joueurs (places)', initial.maxPlayers, L.players[0], L.players[1])}
       ${stepper('scoreLimit', 'Éliminations pour gagner', initial.scoreLimit, L.score[0], L.score[1])}
       ${stepper('minutes', 'Durée maximale', initial.minutes, L.minutes[0], L.minutes[1], ' min')}
@@ -71,6 +79,7 @@ export class GFSettingsForm {
       sfx.click();
       if (b.dataset.mode) this.value = { ...this.value, mode: b.dataset.mode as GFMode };
       if (b.dataset.map) this.value = { ...this.value, map: b.dataset.map as GFMapId };
+      if (b.dataset.nades) this.value = { ...this.value, grenades: !this.value.grenades };
       if (b.dataset.night) this.value = { ...this.value, night: b.dataset.night === '1' };
       if (b.dataset.arsenal) this.value = { ...this.value, arsenal: b.dataset.arsenal as GFArsenal };
       if (b.dataset.wep) {
@@ -112,9 +121,10 @@ export class GFSettingsForm {
     for (const b of this.el.querySelectorAll<HTMLElement>('[data-arsenal]')) b.classList.toggle('on', b.dataset.arsenal === this.value.arsenal);
     const libre = this.value.arsenal === 'libre';
     (this.el.querySelector('.gf-weps') as HTMLElement).hidden = !libre;
+    this.el.querySelector('.gf-nade-toggle')!.classList.toggle('on', this.value.grenades);
     for (const b of this.el.querySelectorAll<HTMLElement>('[data-wep]')) b.classList.toggle('on', this.value.weapons.includes(b.dataset.wep as GFWeapon));
     this.el.querySelector('.gf-arsenal-help')!.textContent = libre
-      ? 'Armes autorisées (cliquez pour en retirer ou en remettre) :'
+      ? 'Armes autorisées (cliquez pour en retirer ou en remettre) ; chaque joueur choisit son arme principale et sa secondaire (touche B) :'
       : `Tout le monde commence au couteau ; toutes les ${progressionStep(this.value)} éliminations, l’arme suivante : ${PROGRESSION.map((w) => WEAPON_NAMES[w]).join(' → ')}.`;
     for (const row of this.el.querySelectorAll<HTMLElement>('.gf-step')) {
       const k = row.dataset.k as 'maxPlayers' | 'scoreLimit' | 'minutes';
@@ -319,6 +329,8 @@ export class GFHud {
   private board = false;
   private feedKey = '';
   readonly minimap = new GFMinimap();
+  onKitClose: () => void = () => {};
+  onKitRequest: () => void = () => {};
   private hitTimer = 0;
   private dmgTimer = 0;
   names: (id: string) => string = () => '?';
@@ -336,11 +348,20 @@ export class GFHud {
       <div class="gf-health"><span class="gf-hp-n"></span><div class="gf-hp"><i></i></div></div>
       <div class="gf-ammo"></div>
       <ol class="gf-slots"></ol>
-      <div class="gf-dead"><div><h2>Éliminé</h2><p class="gf-by"></p><p class="gf-respawn"></p></div></div>
+      <div class="gf-dead"><div><h2>Éliminé</h2><p class="gf-by"></p><p class="gf-respawn"></p><button type="button" class="ghost gf-open-kit">Changer d'équipement (B)</button></div></div>
+      <div class="gf-blind" aria-hidden="true"></div>
+      <div class="gf-nades"></div>
+      <div class="gf-kit" role="dialog" aria-label="Équipement" hidden></div>
       <div class="gf-board" hidden></div>
-      <div class="controls-help"><span><kbd>Clic</kbd> tirer / frapper</span><span><kbd>Clic droit</kbd> viser</span><span><kbd>R</kbd> recharger</span><span><kbd>1</kbd>…<kbd>5</kbd> / molette : armes</span><span class="gf-night-keys"><kbd>L</kbd> lampe <kbd>O</kbd> laser</span><span><kbd>Tab</kbd> scores</span><span><kbd>Échap</kbd> menu</span></div>
+      <div class="controls-help"><span><kbd>Clic</kbd> tirer / frapper</span><span><kbd>Clic droit</kbd> viser</span><span><kbd>R</kbd> recharger</span><span><kbd>1</kbd> <kbd>2</kbd> <kbd>3</kbd> / molette : armes</span><span><kbd>G</kbd> <kbd>F</kbd> <kbd>C</kbd> grenades</span><span><kbd>B</kbd> équipement</span><span class="gf-night-keys"><kbd>L</kbd> lampe <kbd>O</kbd> laser</span><span><kbd>Tab</kbd> scores</span><span><kbd>Échap</kbd> menu</span></div>
     </div>`);
     this.el.append(this.minimap.el);
+    onClick(this.el, '.gf-kit-w', (b) => {
+      sfx.click();
+      this.onKit({ [b.dataset.slot as 'primary' | 'secondary']: b.dataset.w as GFWeapon });
+    });
+    onClick(this.el, '.gf-kit-close', () => this.onKitClose());
+    onClick(this.el, '.gf-open-kit', () => this.onKitRequest());
     window.addEventListener('keydown', (e) => {
       if (e.code === 'Tab' && this.el.classList.contains('open')) {
         this.board = true;
@@ -350,6 +371,46 @@ export class GFHud {
     window.addEventListener('keyup', (e) => {
       if (e.code === 'Tab') this.board = false;
     });
+  }
+
+  /** choix d'un équipement (le contrôleur l'envoie à la salle) */
+  onKit: (l: Partial<GFLoadout>) => void = () => {};
+  onKitOpen: (open: boolean) => void = () => {};
+
+  get kitOpen() {
+    return !(this.el.querySelector('.gf-kit') as HTMLElement).hidden;
+  }
+
+  /** Panneau d'équipement (touche B, ou depuis l'écran d'élimination) : arme principale et secondaire. */
+  toggleKit(G: GFGameView, me: string, open = !this.kitOpen) {
+    const kit = this.el.querySelector('.gf-kit') as HTMLElement;
+    if (G.settings.arsenal === 'progression') open = false;
+    kit.hidden = !open;
+    this.onKitOpen(open);
+    if (open) this.renderKit(G, me);
+  }
+
+  renderKit(G: GFGameView, me: string) {
+    const kit = this.el.querySelector('.gf-kit') as HTMLElement;
+    const l = G.players[me]?.loadout;
+    const row = (title: string, list: readonly GFWeapon[], cur: GFWeapon | null | undefined, slot: 'primary' | 'secondary') => {
+      const ok = list.filter((w) => G.settings.weapons.includes(w));
+      return `<h3>${title}</h3><div class="gf-kit-row">${
+        ok.length
+          ? ok
+              .map((w) => {
+                const W = isGun(w) ? WEAPONS[w] : null;
+                const stat = W ? `${W.pellets > 1 ? `${W.pellets}×` : ''}${W.damage} dégâts · ${W.auto ? 'rafale' : 'coup par coup'} · ${W.magazine} balles` : '';
+                return `<button type="button" class="gf-kit-w ${w === cur ? 'on' : ''}" data-slot="${slot}" data-w="${w}">${WEAPON_ICON[w]}<b>${esc(WEAPON_NAMES[w])}</b><small>${stat}</small></button>`;
+              })
+              .join('')
+          : '<p class="muted">Aucune arme de ce type dans cette partie.</p>'
+      }</div>`;
+    };
+    kit.innerHTML = `<div class="gf-kit-box"><h2>Équipement</h2><p class="muted">Pris en compte tout de suite pendant la protection d'apparition, sinon à la prochaine apparition.</p>
+      ${row('Arme principale (1)', PRIMARIES, l?.primary, 'primary')}
+      ${row('Arme secondaire (2)', SECONDARIES, l?.secondary, 'secondary')}
+      <div class="res-actions"><button type="button" class="primary gf-kit-close">Fermer (B)</button></div></div>`;
   }
 
   /** Avertissement : on bute sur la limite de la carte. */
@@ -406,7 +467,7 @@ export class GFHud {
     if (key !== this.feedKey) this.feedKey = key;
     else return this.renderRest(G, me, now, item, spreadPx, scoped);
     this.el.querySelector('.gf-feed')!.innerHTML = shown
-      .map((k) => `<li><b class="${cls(k.killer)}">${esc(name(k.killer))}</b> <span class="gf-w" title="${esc(WEAPON_NAMES[k.weapon] ?? '')}">${WEAPON_ICON[k.weapon] ?? ICON.balle}${k.head ? `<span class="gf-hs" title="Tir à la tête">${ICON.crane}</span>` : ''}</span> <b class="${cls(k.victim)}">${esc(name(k.victim))}</b></li>`)
+      .map((k) => k.killer === k.victim ? `<li><b class="${cls(k.victim)}">${esc(name(k.victim))}</b> <span class="gf-w">${WEAPON_ICON.grenade}</span> <em>s'est fait sauter</em></li>` : `<li><b class="${cls(k.killer)}">${esc(name(k.killer))}</b> <span class="gf-w" title="${esc(WEAPON_NAMES[k.weapon] ?? '')}">${WEAPON_ICON[k.weapon] ?? ICON.balle}${k.head ? `<span class="gf-hs" title="Tir à la tête">${ICON.crane}</span>` : ''}</span> <b class="${cls(k.victim)}">${esc(name(k.victim))}</b></li>`)
       .join('');
     this.renderRest(G, me, now, item, spreadPx, scoped);
   }
@@ -441,11 +502,19 @@ export class GFHud {
         : '';
     const slotsHtml =
       prog +
-      SLOTS.map((w, i) =>
-        allowed.includes(w)
-          ? `<li class="${w === item ? 'on' : ''}${isGun(w) && st && st.ammo[w] === 0 ? ' empty' : ''}"><kbd>${i + 1}</kbd>${WEAPON_ICON[w]}<span>${esc(WEAPON_NAMES[w])}</span>${isGun(w) ? `<small>${st?.ammo[w] ?? 0}</small>` : ''}</li>`
-          : '',
-      ).join('');
+      allowed
+        .map(
+          (w, i) =>
+            `<li class="${w === item ? 'on' : ''}${isGun(w) && st && st.ammo[w] === 0 ? ' empty' : ''}"><kbd>${i + 1}</kbd>${WEAPON_ICON[w]}<span>${esc(WEAPON_NAMES[w])}</span>${isGun(w) ? `<small>${st?.ammo[w] ?? 0}</small>` : ''}</li>`,
+        )
+        .join('');
+    // grenades restantes ; aveuglement (écran blanc qui s'estompe)
+    const nades = G.settings.grenades && st ? GRENADE_KINDS.map((k) => `<span class="${st.grenades[k] ? '' : 'none'}"><kbd>${GRENADES[k].key}</kbd>${esc(GRENADES[k].name)} <b>${st.grenades[k]}</b></span>`).join('') : '';
+    const nEl = this.el.querySelector('.gf-nades')!;
+    if (nEl.innerHTML !== nades) nEl.innerHTML = nades;
+    const blind = this.el.querySelector('.gf-blind') as HTMLElement;
+    const bl = st && st.blindUntil > now ? (st.blindUntil - now) / Math.max(1, st.blindUntil - st.blindFrom) : 0;
+    blind.style.opacity = String(Math.min(1, bl * 1.6));
     const slots = this.el.querySelector('.gf-slots')!;
     if (slots.innerHTML !== slotsHtml) slots.innerHTML = slotsHtml;
     // invincibilité à l'apparition

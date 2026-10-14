@@ -5,7 +5,7 @@
  */
 import type { Sex } from '../characters/catalog';
 import type { PlayerPose } from '../shared/protocol';
-import type { GFEvent, GFGameView, GFGun, GFLobbyView, GFSettings, GFShot, GFShotResult, Team, Vec3 } from '../shared/gunfight';
+import type { GFEvent, GFGameView, GFGrenade, GFGrenadeThrow, GFGun, GFLoadout, GFLobbyView, GFSettings, GFShot, GFShotResult, Team, Vec3 } from '../shared/gunfight';
 import { GunfightRoom } from '../shared/gunfightRoom';
 import { net } from './net';
 
@@ -20,6 +20,7 @@ export abstract class GFClient {
   clockOffset = 0;
   onEvent: (e: GFEvent) => void = () => {};
   onShot: (s: GFShot) => void = () => {};
+  onGrenade: (g: GFGrenadeThrow) => void = () => {};
   private listeners = new Set<Listener>();
   abstract readonly local: boolean;
 
@@ -56,6 +57,8 @@ export abstract class GFClient {
   abstract shoot(weapon: GFGun, origin: Vec3, dirs: Vec3[], ends: Vec3[]): Promise<GFShotResult>;
   abstract stab(target: string): Promise<GFShotResult>;
   abstract reload(weapon: GFGun): Promise<unknown>;
+  abstract throwGrenade(kind: GFGrenade, origin: Vec3, vel: Vec3): Promise<GFGrenadeThrow>;
+  abstract setLoadout(l: Partial<GFLoadout>): Promise<GFLoadout>;
 }
 
 /** Partie en ligne (serveur). */
@@ -66,7 +69,7 @@ export class SocketGF extends GFClient {
   constructor() {
     super();
     const s = net.socket;
-    const on = <K extends 'gf:salon' | 'gf:etat' | 'gf:poses' | 'gf:tir' | 'gf:evenement'>(ev: K, fn: (...a: never[]) => void) => {
+    const on = <K extends 'gf:salon' | 'gf:etat' | 'gf:poses' | 'gf:tir' | 'gf:evenement' | 'gf:grenade'>(ev: K, fn: (...a: never[]) => void) => {
       s.on(ev, fn as never);
       this.off.push(() => s.off(ev, fn as never));
     };
@@ -75,6 +78,7 @@ export class SocketGF extends GFClient {
     on('gf:poses', (p: Record<string, PlayerPose>) => (this.poses = p));
     on('gf:tir', (x: GFShot) => this.onShot(x));
     on('gf:evenement', (e: GFEvent) => this.onEvent(e));
+    on('gf:grenade', (g: GFGrenadeThrow) => this.onGrenade(g));
   }
 
   private call<T>(ev: string, p: unknown): Promise<T> {
@@ -131,6 +135,12 @@ export class SocketGF extends GFClient {
   reload(weapon: GFGun) {
     return this.call('gf:recharger', { weapon });
   }
+  throwGrenade(kind: GFGrenade, origin: Vec3, vel: Vec3) {
+    return this.call<GFGrenadeThrow>('gf:grenade', { kind, origin, vel });
+  }
+  setLoadout(loadout: Partial<GFLoadout>) {
+    return this.call<GFLoadout>('gf:equipement', { loadout });
+  }
 }
 
 export interface SoloOptions {
@@ -149,7 +159,7 @@ export class LocalGF extends GFClient {
   readonly bots: string[] = [];
   private timer: number;
 
-  constructor(name: string, sex: Sex, readonly opts: SoloOptions, sight: (a: { x: number; y: number; z: number }, b: { x: number; y: number; z: number }) => boolean) {
+  constructor(name: string, sex: Sex, readonly opts: SoloOptions, sight: (a: { x: number; y: number; z: number }, b: { x: number; y: number; z: number }) => boolean, solid?: (x: number, y: number, z: number) => boolean) {
     super();
     const settings = { ...opts.settings, maxPlayers: Math.min(16, opts.bots + 1) };
     this.room = new GunfightRoom(
@@ -160,10 +170,12 @@ export class LocalGF extends GFClient {
         game: (v) => this.setGame(v),
         shot: (s) => this.onShot(s),
         event: (e) => this.onEvent(e),
+        grenade: (g) => this.onGrenade(g),
       },
       Date.now,
       Math.random,
       sight,
+      solid,
     );
     const me = this.room.join(name, sex);
     this.me = me.id;
@@ -226,5 +238,11 @@ export class LocalGF extends GFClient {
   }
   reload(weapon: GFGun) {
     return this.wrap(() => this.room.reload(this.me, weapon));
+  }
+  throwGrenade(kind: GFGrenade, origin: Vec3, vel: Vec3) {
+    return this.wrap(() => this.room.throwGrenade(this.me, kind, origin, vel));
+  }
+  setLoadout(l: Partial<GFLoadout>) {
+    return this.wrap(() => this.room.setLoadout(this.me, l));
   }
 }

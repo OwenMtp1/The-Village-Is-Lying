@@ -18,6 +18,8 @@ export interface GFCtlHooks {
   /** fin complète : retour au menu principal */
   toMenu(): void;
   sight(a: { x: number; y: number; z: number }, b: { x: number; y: number; z: number }): boolean;
+  /** point dans le décor (rebonds des grenades en solo) */
+  solid(x: number, y: number, z: number): boolean;
 }
 
 export class GunfightController {
@@ -45,6 +47,26 @@ export class GunfightController {
     this.hud.names = (id) => this.client?.nameOf(id) ?? '?';
     game.onHitMarker = (k, head) => this.hud.hitMarker(k, head);
     game.onDamaged = () => this.hud.damaged();
+    // équipement (touche B, bouton de l'écran d'élimination) : la souris est libérée pendant le choix
+    const kit = (open?: boolean) => {
+      const G = this.client?.game;
+      if (G) this.hud.toggleKit(G, this.client!.me, open);
+    };
+    game.onLoadout = () => kit();
+    this.hud.onKitRequest = () => kit(true);
+    this.hud.onKitClose = () => kit(false);
+    this.hud.onKitOpen = (open) => {
+      game.kitOpen = open;
+      if (open) document.exitPointerLock?.();
+    };
+    this.hud.onKit = (l) =>
+      this.client
+        ?.setLoadout(l)
+        .then(() => {
+          const G = this.client?.game;
+          if (G) this.hud.renderKit(G, this.client!.me);
+        })
+        .catch((e: Error) => this.toasts.push(e.message, 'bad'));
     this.results.onBack = () => {
       sfx.click();
       this.results.close();
@@ -93,7 +115,7 @@ export class GunfightController {
     this.use(c);
   }
   async solo(name: string, sex: Sex, opts: { settings: GFSettings; bots: number; difficulty: 'facile' | 'normal' | 'difficile'; team: Team }) {
-    this.use(new LocalGF(name, sex, opts, (a, b) => this.hooks.sight(a, b)));
+    this.use(new LocalGF(name, sex, opts, (a, b) => this.hooks.sight(a, b), (x, y, z) => this.hooks.solid(x, y, z)));
   }
 
   quit() {

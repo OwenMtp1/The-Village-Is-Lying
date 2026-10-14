@@ -5,7 +5,7 @@
 import type { Sex } from '../characters/catalog';
 import type { Composition, Role } from './roles';
 import type { Winner } from './rules';
-import type { GFEvent, GFGameView, GFGun, GFLobbyView, GFSettings, GFShot, GFShotResult, Team, Vec3 } from './gunfight';
+import type { GFEvent, GFGameView, GFGrenade, GFGrenadeThrow, GFGun, GFLoadout, GFLobbyView, GFSettings, GFShot, GFShotResult, Team, Vec3 } from './gunfight';
 
 export interface LobbyPlayer {
   id: string;
@@ -47,7 +47,7 @@ export interface PlayerPose {
   laser?: boolean;
 }
 
-export type HeldItem = 'couteau' | 'pistolet' | 'fusil' | 'pompe' | 'precision' | null;
+export type HeldItem = 'couteau' | GFGun | null;
 
 /** Geste vu par les joueurs proches : coup de couteau, tir (pour animer l'arme du joueur concerné). */
 export interface Gesture {
@@ -112,6 +112,10 @@ export interface ClientToServer {
   'gf:tir': (p: { weapon: GFGun; origin: Vec3; dirs: Vec3[]; ends?: Vec3[] }, ack: Ack<GFShotResult>) => void;
   'gf:couteau': (p: { target: string }, ack: Ack<GFShotResult>) => void;
   'gf:recharger': (p: { weapon?: GFGun }, ack: Ack) => void;
+  /** grenade : départ (yeux) et vitesse ; la salle calcule la trajectoire */
+  'gf:grenade': (p: { kind: GFGrenade; origin: Vec3; vel: Vec3 }, ack: Ack<GFGrenadeThrow>) => void;
+  /** équipement (arme principale, secondaire) */
+  'gf:equipement': (p: { loadout: Partial<GFLoadout> }, ack: Ack<GFLoadout>) => void;
   'salon:creer': (p: { name: string; sex: Sex; composition: Composition }, ack: Ack<{ code: string; playerId: string; token: string }>) => void;
   'salon:rejoindre': (p: { code: string; name: string; sex: Sex; token?: string }, ack: Ack<{ code: string; playerId: string; token: string }>) => void;
   'salon:composition': (p: { composition: Composition }, ack: Ack) => void;
@@ -135,6 +139,7 @@ export interface ServerToClient {
   'gf:poses': (p: Record<string, PlayerPose>) => void;
   'gf:tir': (s: GFShot) => void;
   'gf:evenement': (e: GFEvent) => void;
+  'gf:grenade': (g: GFGrenadeThrow) => void;
   'salon:etat': (v: LobbyView) => void;
   'jeu:etat': (v: GameView) => void;
   'jeu:secret': (v: PrivateInfo) => void;

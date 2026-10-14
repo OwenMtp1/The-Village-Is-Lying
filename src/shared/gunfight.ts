@@ -22,6 +22,8 @@ export interface GFSettings {
   /** armes : au choix parmi `weapons` (libre), ou imposées par le nombre d'éliminations (progression) */
   arsenal: GFArsenal;
   weapons: GFWeapon[];
+  /** grenades et équipement tactique */
+  grenades: boolean;
   /** partie de nuit : lampes et lasers montés sur les armes */
   night: boolean;
   /** carte (partie du village) */
@@ -34,11 +36,35 @@ export interface GFSettings {
   minutes: number;
 }
 
-export type GFGun = 'pistolet' | 'fusil' | 'pompe' | 'precision';
+/** armes à feu : secondaires (pistolet, revolver, pistolet-mitrailleur) et principales */
+export type GFGun = 'pistolet' | 'revolver' | 'pm' | 'mitraillette' | 'fusil' | 'assaut' | 'tactique' | 'mitrailleuse' | 'pompe' | 'precision';
 export type GFWeapon = GFGun | 'couteau';
-export const GUNS: GFGun[] = ['pistolet', 'fusil', 'pompe', 'precision'];
-/** ordre des emplacements (touches 1 à 5) */
-export const SLOTS: GFWeapon[] = ['pistolet', 'fusil', 'pompe', 'precision', 'couteau'];
+export const SECONDARIES: GFGun[] = ['pistolet', 'revolver', 'pm'];
+export const PRIMARIES: GFGun[] = ['mitraillette', 'fusil', 'assaut', 'tactique', 'mitrailleuse', 'pompe', 'precision'];
+export const GUNS: GFGun[] = [...SECONDARIES, ...PRIMARIES];
+/** toutes les armes, dans l'ordre des listes (réglages, inventaire) */
+export const SLOTS: GFWeapon[] = [...PRIMARIES, ...SECONDARIES, 'couteau'];
+export const isPrimary = (w: unknown): w is GFGun => PRIMARIES.includes(w as GFGun);
+export const isSecondary = (w: unknown): w is GFGun => SECONDARIES.includes(w as GFGun);
+
+/** Équipement choisi par le joueur (« classe ») : une arme principale, une secondaire, le couteau en plus. */
+export interface GFLoadout {
+  primary: GFGun | null;
+  secondary: GFGun | null;
+}
+
+/** Équipement tactique : grenade à fragmentation (G), grenade aveuglante (F), fumigène (C). */
+export type GFGrenade = 'frag' | 'flash' | 'fumee';
+export const GRENADES = {
+  frag: { name: 'Grenade', key: 'G', count: 2, fuse: 2.2, radius: 7, damage: 150 },
+  flash: { name: 'Aveuglante', key: 'F', count: 1, fuse: 1.6, radius: 26, blind: 4 },
+  fumee: { name: 'Fumigène', key: 'C', count: 1, fuse: 1.4, radius: 5.5, seconds: 15 },
+  /** vitesse de lancer maximale (m/s), gravité, rebonds */
+  maxSpeed: 22,
+  gravity: 9.8,
+  bounce: 0.35,
+} as const;
+export const GRENADE_KINDS: GFGrenade[] = ['frag', 'flash', 'fumee'];
 
 export interface GunSpec {
   name: string;
@@ -72,6 +98,12 @@ export interface GunSpec {
  * rien sans la lunette.
  */
 export const WEAPONS: Record<GFGun, GunSpec> = {
+  revolver: { name: 'Revolver', damage: 55, head: 2, falloff: [20, 50, 0.7], fireDelay: 0.5, auto: false, magazine: 6, reload: 2.2, range: 70, pellets: 1, spread: 0.02, adsSpread: 0.003, zoom: 0.75, recoil: 0.09 },
+  pm: { name: 'Pistolet-mitrailleur', damage: 16, head: 1.5, falloff: [10, 30, 0.55], fireDelay: 0.06, auto: true, magazine: 20, reload: 1.6, range: 40, pellets: 1, spread: 0.06, adsSpread: 0.02, zoom: 0.85, recoil: 0.012 },
+  mitraillette: { name: 'Mitraillette', damage: 21, head: 1.6, falloff: [14, 40, 0.6], fireDelay: 0.075, auto: true, magazine: 32, reload: 2.0, range: 60, pellets: 1, spread: 0.04, adsSpread: 0.012, zoom: 0.75, recoil: 0.012 },
+  assaut: { name: "Fusil d'assaut", damage: 30, head: 1.8, falloff: [35, 90, 0.7], fireDelay: 0.12, auto: true, magazine: 30, reload: 2.5, range: 120, pellets: 1, spread: 0.05, adsSpread: 0.008, zoom: 0.65, recoil: 0.024 },
+  tactique: { name: 'Fusil tactique', damage: 48, head: 2, falloff: [60, 150, 0.8], fireDelay: 0.3, auto: false, magazine: 15, reload: 2.6, range: 200, pellets: 1, spread: 0.05, adsSpread: 0.002, zoom: 0.42, recoil: 0.045 },
+  mitrailleuse: { name: 'Mitrailleuse', damage: 27, head: 1.6, falloff: [40, 100, 0.7], fireDelay: 0.09, auto: true, magazine: 100, reload: 5, range: 120, pellets: 1, spread: 0.07, adsSpread: 0.015, zoom: 0.7, recoil: 0.018 },
   pistolet: { name: 'Pistolet', damage: 28, head: 2, falloff: [18, 45, 0.6], fireDelay: 0.24, auto: false, magazine: 12, reload: 1.5, range: 60, pellets: 1, spread: 0.02, adsSpread: 0.004, zoom: 0.8, recoil: 0.03 },
   fusil: { name: 'Carabine', damage: 24, head: 1.75, falloff: [30, 80, 0.65], fireDelay: 0.1, auto: true, magazine: 30, reload: 2.3, range: 110, pellets: 1, spread: 0.045, adsSpread: 0.007, zoom: 0.65, recoil: 0.016 },
   pompe: { name: 'Fusil à pompe', damage: 13, head: 1.5, falloff: [7, 22, 0.25], fireDelay: 0.95, auto: false, magazine: 6, reload: 3.0, range: 30, pellets: 9, spread: 0.08, adsSpread: 0.065, zoom: 0.88, recoil: 0.085 },
@@ -85,7 +117,7 @@ export function damageAt(w: GunSpec, d: number, head: boolean): number {
   return w.damage * k * (head ? w.head : 1);
 }
 
-export const WEAPON_NAMES: Record<GFWeapon, string> = { ...Object.fromEntries(GUNS.map((g) => [g, WEAPONS[g].name])), couteau: 'Couteau' } as Record<GFWeapon, string>;
+export const WEAPON_NAMES: Record<GFWeapon | 'grenade', string> = { ...Object.fromEntries(GUNS.map((g) => [g, WEAPONS[g].name])), couteau: 'Couteau', grenade: 'Grenade' } as Record<GFWeapon | 'grenade', string>;
 
 export const isGun = (w: unknown): w is GFGun => typeof w === 'string' && (GUNS as string[]).includes(w);
 
@@ -109,7 +141,7 @@ export const GF_RULES = {
   limits: { players: [2, 16], score: [5, 100], minutes: [2, 30] } as const,
 };
 
-export const GF_DEFAULT: GFSettings = { mode: 'ffa', night: false, arsenal: 'libre', weapons: ['pistolet', 'fusil', 'pompe', 'precision', 'couteau'], map: 'village', maxPlayers: 8, scoreLimit: 20, minutes: 8 };
+export const GF_DEFAULT: GFSettings = { mode: 'ffa', night: false, arsenal: 'libre', grenades: true, weapons: ['mitraillette', 'fusil', 'assaut', 'tactique', 'mitrailleuse', 'pompe', 'precision', 'pistolet', 'revolver', 'pm', 'couteau'], map: 'village', maxPlayers: 8, scoreLimit: 20, minutes: 8 };
 
 export const GF_MODE_NAMES: Record<GFMode, string> = { ffa: 'Chacun pour soi', equipes: 'Match à mort par équipe' };
 export const TEAM_NAMES: Record<Team, string> = { rouge: 'Équipe Rouge', bleu: 'Équipe Bleue' };
@@ -122,6 +154,7 @@ export function cleanSettings(s: Partial<GFSettings> | undefined): GFSettings {
     mode: s?.mode === 'equipes' ? 'equipes' : 'ffa',
     arsenal: s?.arsenal === 'progression' ? 'progression' : 'libre',
     night: s?.night === true,
+    grenades: s?.grenades !== false,
     weapons: (() => {
       const w = SLOTS.filter((x) => Array.isArray(s?.weapons) && s!.weapons.includes(x));
       return w.length ? w : [...SLOTS];
@@ -136,19 +169,36 @@ export function cleanSettings(s: Partial<GFSettings> | undefined): GFSettings {
 export const ARSENAL_NAMES: Record<GFArsenal, string> = { libre: 'Armes au choix', progression: 'Progression' };
 
 /** Progression (« gun game ») : on commence au couteau et chaque palier d'éliminations donne l'arme suivante. */
-export const PROGRESSION: GFWeapon[] = ['couteau', 'pistolet', 'pompe', 'fusil', 'precision'];
-/** éliminations par palier : l'arme finale arrive au dernier cinquième du score visé */
-export const progressionStep = (s: GFSettings) => Math.max(1, Math.round(s.scoreLimit / PROGRESSION.length));
+export const PROGRESSION: GFWeapon[] = ['couteau', 'pistolet', 'revolver', 'pm', 'pompe', 'mitraillette', 'fusil', 'assaut', 'tactique', 'mitrailleuse', 'precision'];
+/** éliminations par palier : l'arme finale arrive au dernier palier avant le score visé */
+export const progressionStep = (s: GFSettings) => Math.max(1, Math.floor(s.scoreLimit / PROGRESSION.length));
 export const progressionTier = (s: GFSettings, kills: number) => Math.min(PROGRESSION.length - 1, Math.floor(kills / progressionStep(s)));
 
-/** Armes permises à un joueur ; la première est celle qu'il sort à l'apparition. */
-export function allowedWeapons(s: GFSettings, kills: number): GFWeapon[] {
+/** Équipement par défaut : les premières armes permises de chaque catégorie (carabine et pistolet si possible). */
+export function defaultLoadout(s: GFSettings): GFLoadout {
+  const pick = (list: GFGun[], pref: GFGun) => (s.weapons.includes(pref) ? pref : (list.find((w) => s.weapons.includes(w)) ?? null));
+  return { primary: pick(PRIMARIES, 'fusil'), secondary: pick(SECONDARIES, 'pistolet') };
+}
+
+/** Équipement valable pour ces réglages (une arme interdite ou mal rangée est remplacée par celle par défaut). */
+export function cleanLoadout(s: GFSettings, l: Partial<GFLoadout> | undefined): GFLoadout {
+  const d = defaultLoadout(s);
+  return {
+    primary: isPrimary(l?.primary) && s.weapons.includes(l.primary) ? l.primary : d.primary,
+    secondary: isSecondary(l?.secondary) && s.weapons.includes(l.secondary) ? l.secondary : d.secondary,
+  };
+}
+
+/** Armes permises à un joueur (dans l'ordre des touches 1, 2, 3) ; la première est celle qu'il sort à l'apparition. */
+export function allowedWeapons(s: GFSettings, kills: number, loadout: GFLoadout = defaultLoadout(s)): GFWeapon[] {
   if (s.arsenal === 'progression') {
     const w = PROGRESSION[progressionTier(s, kills)];
     return w === 'couteau' ? ['couteau'] : [w, 'couteau'];
   }
-  const guns = s.weapons.filter((w) => w !== 'couteau');
-  return guns.length ? [...guns, ...(s.weapons.includes('couteau') ? (['couteau'] as GFWeapon[]) : [])] : ['couteau'];
+  const l = cleanLoadout(s, loadout);
+  const out: GFWeapon[] = [l.primary, l.secondary].filter((w): w is GFGun => !!w);
+  if (s.weapons.includes('couteau') || !out.length) out.push('couteau');
+  return out;
 }
 
 // ───────────────────────── vues échangées ─────────────────────────
@@ -185,6 +235,13 @@ export interface GFPlayerState {
   headshots: number;
   /** armes permises (la première : celle de l'apparition) */
   weapons: GFWeapon[];
+  /** équipement choisi (appliqué à la prochaine apparition s'il change en cours de vie) */
+  loadout: GFLoadout;
+  /** grenades restantes */
+  grenades: Record<GFGrenade, number>;
+  /** aveuglé (grenade aveuglante) jusqu'à (horodatage serveur) et depuis */
+  blindUntil: number;
+  blindFrom: number;
   /** réapparition prévue (horodatage serveur) */
   respawnAt: number;
   /** dernière apparition : position et numéro (le client se place quand le numéro change) */
@@ -196,7 +253,7 @@ export interface GFPlayerState {
 export interface GFKill {
   killer: string;
   victim: string;
-  weapon: GFWeapon;
+  weapon: GFWeapon | 'grenade';
   head: boolean;
   t: number;
 }
@@ -212,11 +269,24 @@ export interface GFGameView {
   players: Record<string, GFPlayerState>;
   teamScores: Record<Team, number>;
   feed: GFKill[];
+  /** nuages de fumigène actifs */
+  smokes: { x: number; y: number; z: number; r: number; from: number; until: number }[];
   /** vainqueur : identifiant du joueur, équipe, ou null (égalité) */
   result: null | { winner: string | Team | null; reason: string };
 }
 
 export type Vec3 = [number, number, number];
+
+/** Grenade lancée, vue par tous : trajectoire calculée par la salle (un point tous les 1/20 s), explosion. */
+export interface GFGrenadeThrow {
+  id: number;
+  by: string;
+  kind: GFGrenade;
+  path: Vec3[];
+  /** départ et explosion (horodatages serveur) */
+  t0: number;
+  explodeAt: number;
+}
 
 /** Tir vu par tous (animation, son, traçantes) : d'où, vers où (un point par plomb), qui est touché, à la tête ou non. */
 export interface GFShot {

@@ -60,7 +60,7 @@ export function createGameServer(opts: { staticDir?: string; random?: () => numb
     }
   };
   const newCode = () => makeCode(() => false);
-  const gunfight = gunfightServer(io, sight, makeCode, opts.random);
+  const gunfight = gunfightServer(io, sight, makeCode, opts.random, (x, y, z) => world.blocksPoint(x, y, z, 0));
 
   const output = (code: string) => ({
     lobby: (v: Parameters<ServerToClient['salon:etat']>[0]) => io.to(code).emit('salon:etat', v),

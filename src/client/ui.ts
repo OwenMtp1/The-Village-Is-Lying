@@ -37,6 +37,8 @@ export interface UiHooks {
   /** mode Gunfight : écran du menu, salle ou combat en cours, fiche de pause, sortie */
   gunfight: GFMenuHooks;
   gfActive(): boolean;
+  /** Gunfight : un panneau (équipement) a libéré la souris volontairement */
+  gfBusy(): boolean;
   gfPauseCard(): string;
   quitGunfight(): void;
   /** téléportation (exploration solo) vers un point choisi sur la carte */
@@ -162,7 +164,7 @@ export class GameUi {
   }
   private onLockChange() {
     const mode = this.hooks.mode();
-    if (document.pointerLockElement || this.pause.open || this.results.open) return;
+    if (document.pointerLockElement || this.pause.open || this.results.open || this.hooks.gfBusy()) return;
     if (performance.now() - this.selfUnlockAt < 400) return;
     if ((mode === 'solo' || mode === 'online' || mode === 'gunfight') && net.game?.phase !== 'reunion') this.setPause(true);
   }

@@ -11,13 +11,58 @@ import { assignAppearances } from '../characters/appearance';
 import { VARIANTS, type Sex } from '../characters/catalog';
 import type { PlayerPose } from './protocol';
 import { insideMap, mapOf } from './gunfightMaps';
-import { GF_RULES, GUNS, WEAPONS, WEAPON_NAMES, allowedWeapons, progressionTier, damageAt, cleanSettings, isGun, normalize, rayHitBody, type GFGun, type GFShotResult, type GFWeapon, type Vec3, type GFEvent, type GFGameView, type GFKill, type GFLobbyView, type GFPlayerState, type GFSettings, type GFShot, type Team } from './gunfight';
+import { GF_RULES, GRENADES, GRENADE_KINDS, GUNS, WEAPONS, WEAPON_NAMES, allowedWeapons, cleanLoadout, defaultLoadout, progressionTier, damageAt, type GFGrenade, type GFGrenadeThrow, type GFLoadout, cleanSettings, isGun, normalize, rayHitBody, type GFGun, type GFShotResult, type GFWeapon, type Vec3, type GFEvent, type GFGameView, type GFKill, type GFLobbyView, type GFPlayerState, type GFSettings, type GFShot, type Team } from './gunfight';
 
 export interface GFOutput {
   lobby(v: GFLobbyView): void;
   game(v: GFGameView): void;
   shot(s: GFShot): void;
   event(e: GFEvent): void;
+  /** grenade lancée (trajectoire, explosion prévue) */
+  grenade?(g: GFGrenadeThrow): void;
+}
+
+/** Le point est-il dans un obstacle ou sous le sol ? (rebonds des grenades) */
+export type Solid = (x: number, y: number, z: number) => boolean;
+
+/**
+ * Trajectoire d'une grenade : chute libre, rebonds amortis sur les murs, le sol et les plafonds, jusqu'à
+ * l'explosion (`fuse` s). Un point tous les 1/20 s ; le dernier est le lieu de l'explosion.
+ */
+export function grenadePath(o: Vec3, v: Vec3, fuse: number, solid: Solid): Vec3[] {
+  const dt = 1 / 120;
+  let [x, y, z] = o;
+  let [vx, vy, vz] = v;
+  const out: Vec3[] = [[x, y, z]];
+  const n = Math.round(fuse / dt);
+  for (let i = 1; i <= n; i++) {
+    vy -= GRENADES.gravity * dt;
+    const nx = x + vx * dt;
+    const ny = y + vy * dt;
+    const nz = z + vz * dt;
+    if (solid(nx, ny, nz)) {
+      // on cherche l'axe heurté : chaque composante est essayée seule
+      const hitX = solid(nx, y, z);
+      const hitY = solid(x, ny, z);
+      const hitZ = solid(x, y, nz);
+      const k = GRENADES.bounce;
+      if (hitY || (!hitX && !hitZ)) {
+        vy = -vy * k;
+        vx *= 0.7;
+        vz *= 0.7;
+      }
+      if (hitX) vx = -vx * k;
+      if (hitZ) vz = -vz * k;
+      if (Math.abs(vy) < 0.6 && hitY) vy = 0;
+    } else {
+      x = nx;
+      y = ny;
+      z = nz;
+    }
+    if (i % 6 === 0) out.push([x, y, z]);
+  }
+  out.push([x, y + 0.08, z]);
+  return out;
 }
 
 export class GFError extends Error {}
@@ -47,7 +92,7 @@ export class GunfightRoom {
   settings: GFSettings;
   phase: GFLobbyView['phase'] = 'salon';
   private seq = 0;
-  private state = new Map<string, Omit<GFPlayerState, 'weapons'> & { nextShotAt: number; nextStabAt: number }>();
+  private state = new Map<string, Omit<GFPlayerState, 'weapons'> & { nextShotAt: number; nextStabAt: number; nextLoadout: GFLoadout | null }>();
   private poses = new Map<string, PlayerPose & { t: number }>();
   /** positions récentes (compensation de la latence des tirs) */
   private history = new Map<string, Past[]>();
@@ -58,6 +103,9 @@ export class GunfightRoom {
   private startedAt = 0;
   private endsAt = 0;
   private teamScores: Record<Team, number> = { rouge: 0, bleu: 0 };
+  private thrown: (GFGrenadeThrow & { at: Vec3 })[] = [];
+  private smokes: GFGameView['smokes'] = [];
+  private grenadeSeq = 0;
 
   constructor(
     readonly code: string,
@@ -66,6 +114,7 @@ export class GunfightRoom {
     private now: () => number = Date.now,
     private random: () => number = Math.random,
     private sight: Sight = () => true,
+    private solid: Solid = (_x, y) => y < 0,
   ) {
     this.settings = cleanSettings(settings);
   }
@@ -171,6 +220,8 @@ export class GunfightRoom {
     this.state.clear();
     this.poses.clear();
     this.history.clear();
+    this.thrown = [];
+    this.smokes = [];
     this.feed = [];
     this.result = null;
     this.teamScores = { rouge: 0, bleu: 0 };
@@ -179,7 +230,7 @@ export class GunfightRoom {
     this.startedAt = t;
     this.endsAt = t + this.settings.minutes * 60_000;
     for (const pid of ids) {
-      this.state.set(pid, { hp: GF_RULES.health, alive: true, kills: 0, deaths: 0, headshots: 0, ammo: fullAmmo(), reloadUntil: 0, reloading: null, respawnAt: 0, spawn: { x: 0, y: null, z: 0, yaw: 0, n: 0 }, shieldUntil: 0, nextShotAt: 0, nextStabAt: 0 });
+      this.state.set(pid, { hp: GF_RULES.health, alive: true, kills: 0, deaths: 0, headshots: 0, ammo: fullAmmo(), reloadUntil: 0, reloading: null, respawnAt: 0, spawn: { x: 0, y: null, z: 0, yaw: 0, n: 0 }, shieldUntil: 0, nextShotAt: 0, nextStabAt: 0, loadout: defaultLoadout(this.settings), nextLoadout: null, grenades: { frag: 0, flash: 0, fumee: 0 }, blindUntil: 0, blindFrom: 0 });
       this.respawn(pid);
     }
     this.publish();
@@ -207,6 +258,11 @@ export class GunfightRoom {
     s.alive = true;
     s.hp = GF_RULES.health;
     s.ammo = fullAmmo();
+    if (s.nextLoadout) s.loadout = s.nextLoadout;
+    s.nextLoadout = null;
+    const g = this.settings.grenades;
+    s.grenades = { frag: g ? GRENADES.frag.count : 0, flash: g ? GRENADES.flash.count : 0, fumee: g ? GRENADES.fumee.count : 0 };
+    s.blindUntil = 0;
     s.reloadUntil = 0;
     s.reloading = null;
     s.respawnAt = 0;
@@ -224,7 +280,95 @@ export class GunfightRoom {
 
   /** Armes permises à ce joueur (réglages de la salle, palier de progression). */
   allowed(id: string): GFWeapon[] {
-    return allowedWeapons(this.settings, this.state.get(id)?.kills ?? 0);
+    const s = this.state.get(id);
+    return allowedWeapons(this.settings, s?.kills ?? 0, s?.loadout);
+  }
+
+  /**
+   * Choix de l'équipement (arme principale et secondaire, parmi celles que la salle permet) : appliqué tout de
+   * suite pendant la protection d'apparition ou à terre, sinon à la prochaine apparition.
+   */
+  setLoadout(id: string, l: Partial<GFLoadout>): GFLoadout {
+    const s = this.state.get(id);
+    if (!s) throw new GFError('Aucune partie en cours.');
+    const next = cleanLoadout(this.settings, l);
+    if (!s.alive || s.shieldUntil > this.now()) {
+      s.loadout = next;
+      s.nextLoadout = null;
+      const pose = this.poses.get(id);
+      if (pose && !this.allowed(id).includes(pose.item as GFWeapon)) pose.item = this.allowed(id)[0];
+    } else s.nextLoadout = next;
+    this.publishGame();
+    return next;
+  }
+
+  /**
+   * Lancer d'une grenade : depuis les yeux du joueur (2 m de tolérance), vitesse bornée. La salle calcule la
+   * trajectoire (rebonds) et l'explosion ; les effets s'appliquent à l'heure de l'explosion (horloge).
+   */
+  throwGrenade(id: string, kind: GFGrenade, origin: Vec3, vel: Vec3): GFGrenadeThrow {
+    const s = this.live(id);
+    if (!GRENADE_KINDS.includes(kind)) throw new GFError('Équipement inconnu.');
+    if (s.grenades[kind] <= 0) throw new GFError(`Plus de ${GRENADES[kind].name.toLowerCase()}.`);
+    const p = this.poses.get(id)!;
+    const eye: Vec3 = [p.x, p.y + EYE, p.z];
+    if (!origin?.every?.(Number.isFinite) || !vel?.every?.(Number.isFinite) || Math.hypot(origin[0] - eye[0], origin[1] - eye[1], origin[2] - eye[2]) > 2) throw new GFError('Lancer invalide.');
+    const sp = Math.hypot(vel[0], vel[1], vel[2]);
+    const k = sp > GRENADES.maxSpeed ? GRENADES.maxSpeed / sp : 1;
+    const t = this.now();
+    s.grenades[kind]--;
+    s.shieldUntil = 0;
+    const fuse = GRENADES[kind].fuse;
+    const path = grenadePath(origin, [vel[0] * k, vel[1] * k, vel[2] * k], fuse, this.solid);
+    const g = { id: ++this.grenadeSeq, by: id, kind, path, t0: t, explodeAt: t + fuse * 1000, at: path[path.length - 1] };
+    this.thrown.push(g);
+    const { at: _at, ...view } = g;
+    void _at;
+    this.out.grenade?.(view);
+    this.publishGame();
+    return view;
+  }
+
+  /** Explosion : éclats (dégâts selon la distance, à couvert on est protégé), aveuglement, nuage de fumée. */
+  private explode(g: GFGrenadeThrow & { at: Vec3 }) {
+    const t = this.now();
+    const [x, y, z] = g.at;
+    const c = { x, y: y + 0.3, z };
+    if (g.kind === 'fumee') {
+      this.smokes.push({ x, y, z, r: GRENADES.fumee.radius, from: t, until: t + GRENADES.fumee.seconds * 1000 });
+      return;
+    }
+    for (const [vid, vs] of this.state) {
+      const q = this.poses.get(vid);
+      if (!vs.alive || !q) continue;
+      const eye = { x: q.x, y: q.y + EYE, z: q.z };
+      const d = Math.hypot(eye.x - c.x, eye.y - c.y, eye.z - c.z);
+      if (g.kind === 'flash') {
+        const R = GRENADES.flash.radius;
+        if (d > R || !this.sight(c, eye)) continue;
+        // face à l'éclair : aveuglé longtemps ; dos tourné : à peine
+        const look = [Math.sin(q.yaw) * Math.cos(q.pitch), Math.sin(q.pitch), Math.cos(q.yaw) * Math.cos(q.pitch)];
+        const dot = d < 0.1 ? 1 : (look[0] * (c.x - eye.x) + look[1] * (c.y - eye.y) + look[2] * (c.z - eye.z)) / d;
+        const secs = GRENADES.flash.blind * Math.max(0.15, Math.min(1, (dot + 0.35) / 1.2)) * Math.sqrt(1 - d / R);
+        vs.blindFrom = t;
+        vs.blindUntil = Math.max(vs.blindUntil, t + secs * 1000);
+        continue;
+      }
+      // éclats : le lanceur et les adversaires (pas les coéquipiers), à couvert on est épargné
+      if (vid !== g.by && !this.enemy(g.by, vid)) continue;
+      if (vs.shieldUntil > t) continue;
+      const chest = { x: q.x, y: q.y + CHEST, z: q.z };
+      const dd = Math.hypot(chest.x - c.x, chest.y - c.y, chest.z - c.z);
+      if (dd > GRENADES.frag.radius || !(this.sight(c, chest) || this.sight(c, eye))) continue;
+      const dmg = Math.round(GRENADES.frag.damage * (1 - dd / GRENADES.frag.radius) ** 1.3);
+      if (dmg > 0 && this.state.get(g.by)) this.damage(vid, g.by, dmg, 'grenade', false);
+    }
+  }
+
+  /** Nuages de fumigène actifs : une ligne de vue qui les traverse est bouchée (robots). */
+  get activeSmokes() {
+    const t = this.now();
+    return this.smokes.filter((s) => s.until > t);
   }
 
   private live(id: string) {
@@ -411,7 +555,7 @@ export class GunfightRoom {
     }
   }
 
-  private damage(victim: string, by: string, dmg: number, weapon: GFWeapon, head: boolean): boolean {
+  private damage(victim: string, by: string, dmg: number, weapon: GFWeapon | 'grenade', head: boolean): boolean {
     const v = this.state.get(victim)!;
     v.hp = Math.max(0, v.hp - dmg);
     if (v.hp > 0) {
@@ -424,6 +568,13 @@ export class GunfightRoom {
     v.respawnAt = t + GF_RULES.respawnSeconds * 1000;
     const k = this.state.get(by)!;
     const tier = progressionTier(this.settings, k.kills);
+    // sa propre grenade : pas de point
+    if (by === victim) {
+      this.feed.push({ killer: by, victim, weapon, head, t });
+      if (this.feed.length > 8) this.feed.shift();
+      this.publishGame();
+      return true;
+    }
     k.kills++;
     if (head) k.headshots++;
     // progression : palier franchi → l'arme suivante est sortie d'office
@@ -487,6 +638,17 @@ export class GunfightRoom {
         changed = true;
       }
     }
+    // grenades arrivées à l'heure de l'explosion ; fumées dissipées
+    const due = this.thrown.filter((g) => t >= g.explodeAt);
+    if (due.length) {
+      this.thrown = this.thrown.filter((g) => t < g.explodeAt);
+      for (const g of due) this.explode(g);
+      changed = true;
+    }
+    const before = this.smokes.length;
+    this.smokes = this.smokes.filter((s) => s.until > t);
+    if (this.smokes.length !== before) changed = true;
+    if (this.gamePhase !== 'jeu') return;
     if (t >= this.endsAt) this.finishOnTime();
     else if (changed) this.publishGame();
   }
@@ -500,6 +662,8 @@ export class GunfightRoom {
     this.state.clear();
     this.poses.clear();
     this.history.clear();
+    this.thrown = [];
+    this.smokes = [];
     this.feed = [];
     this.result = null;
     this.phase = 'salon';
@@ -511,7 +675,7 @@ export class GunfightRoom {
     const t = this.now();
     for (const [pid, s] of this.state) {
       this.settleReload(s, t);
-      players[pid] = { hp: s.hp, alive: s.alive, kills: s.kills, deaths: s.deaths, headshots: s.headshots, weapons: this.allowed(pid), ammo: { ...s.ammo }, reloadUntil: s.reloadUntil, reloading: s.reloading, respawnAt: s.respawnAt, spawn: { ...s.spawn }, shieldUntil: s.shieldUntil };
+      players[pid] = { hp: s.hp, alive: s.alive, kills: s.kills, deaths: s.deaths, headshots: s.headshots, weapons: this.allowed(pid), ammo: { ...s.ammo }, reloadUntil: s.reloadUntil, reloading: s.reloading, respawnAt: s.respawnAt, spawn: { ...s.spawn }, shieldUntil: s.shieldUntil, loadout: { ...(s.nextLoadout ?? s.loadout) }, grenades: { ...s.grenades }, blindUntil: s.blindUntil, blindFrom: s.blindFrom };
     }
     const teams: Record<string, Team | null> = {};
     for (const [pid, m] of this.players) teams[pid] = m.team;
@@ -526,6 +690,7 @@ export class GunfightRoom {
       players,
       teamScores: { ...this.teamScores },
       feed: [...this.feed],
+      smokes: this.activeSmokes,
       result: this.result,
     };
   }

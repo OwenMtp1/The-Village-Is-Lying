@@ -16,7 +16,7 @@ import type { MoveInput } from '../characters/controller';
 import type { Input } from '../input';
 import type { Village } from '../village/village';
 import type { PlayerPose } from '../shared/protocol';
-import { GF_RULES, SLOTS, WEAPONS, isGun, type GFGun, type GFShot, type GFShotResult, type GFWeapon, type Team, type Vec3 } from '../shared/gunfight';
+import { GF_RULES, GRENADES, PRIMARIES, SECONDARIES, SLOTS, WEAPONS, isGun, type GFGrenade, type GFGrenadeThrow, type GFGun, type GFShot, type GFShotResult, type GFWeapon, type Team, type Vec3 } from '../shared/gunfight';
 import { sfx } from '../audio/sfx';
 import { LocalGF, type GFClient } from './gfNet';
 import { insideMap, mapOf, type GFMap } from '../shared/gunfightMaps';
@@ -84,6 +84,16 @@ export class GunfightGame {
   private sendAcc = 0;
   private spawnN = 0;
   private tracers: { line: THREE.Line; life: number }[] = [];
+  /** grenades en vol, explosions (boules de feu, éclats), nuages de fumée affichés */
+  private flying = new Map<number, { g: GFGrenadeThrow; mesh: THREE.Mesh; done: boolean }>();
+  private blasts: { s: THREE.Sprite; life: number; max: number; grow: number }[] = [];
+  private blastLight: THREE.PointLight;
+  private blastLife = 0;
+  private smokeSprites = new Map<number, THREE.Sprite[]>();
+  private nextThrow = 0;
+  /** ouverture du choix d'équipement (touche B) ; panneau ouvert : commandes gelées */
+  onLoadout: () => void = () => {};
+  kitOpen = false;
   private fallMe = 0;
   item: GFWeapon = 'pistolet';
   /** visée épaulée (0 à 1), dispersion actuelle (rad), prochain tir permis (s) */
@@ -129,6 +139,9 @@ export class GunfightGame {
     this.laserLine.frustumCulled = false;
     this.laserLine.visible = false;
     scene.add(this.laserLine);
+    // une seule lumière d'explosion, créée d'avance (le nombre de lumières ne change jamais)
+    this.blastLight = new THREE.PointLight('#ffb35a', 0, 22, 1.6);
+    scene.add(this.blastLight);
   }
 
   get night() {
@@ -139,6 +152,7 @@ export class GunfightGame {
     this.dispose();
     this.client = client;
     client.onShot = (s) => this.onShot(s);
+    client.onGrenade = (g) => this.onGrenade(g);
   }
 
   get map(): GFMap {
@@ -192,7 +206,7 @@ export class GunfightGame {
           ch.root.add(tag);
           tag.position.y = ch.height + 0.35;
           this.scene.add(ch.root);
-          this.bots.set(id, { ch, weapon: botWeapon(g.players[id]?.weapons ?? ['pistolet']), aim: sp.yaw, tag, spawnN: sp.n - 1, target: null, waypoint: this.randomSpawn(), stuck: 0, nextShot: 0, strafe: Math.random() * 6, fall: 0, thinkAt: 0 });
+          this.bots.set(id, { ch, weapon: g.players[id]?.weapons[0] ?? 'pistolet', aim: sp.yaw, tag, spawnN: sp.n - 1, target: null, waypoint: this.randomSpawn(), stuck: 0, nextShot: 0, strafe: Math.random() * 6, fall: 0, thinkAt: 0 });
         } else {
           const anim = new CharacterAnimator(bases[i]);
           const y = world.groundAt(sp.x, sp.z, sp.y !== null && sp.y !== undefined ? sp.y + 1 : 1e6);
@@ -222,6 +236,13 @@ export class GunfightGame {
     document.body.classList.remove('aiming', 'scoped');
     this.cam.zoom = 1;
     this.torches.off();
+    for (const f of this.flying.values()) f.mesh.removeFromParent();
+    this.flying.clear();
+    for (const b of this.blasts) b.s.removeFromParent();
+    this.blasts = [];
+    for (const list of this.smokeSprites.values()) for (const sp of list) sp.removeFromParent();
+    this.smokeSprites.clear();
+    this.blastLight.intensity = 0;
     this.laserLine.visible = false;
     for (const d of this.dots) d.visible = false;
     this.torchOn = this.laserOn = true;
@@ -316,6 +337,148 @@ export class GunfightGame {
     }
     this.dots[i].position.copy(at);
     this.dots[i].visible = true;
+  }
+
+  /** Lancer : depuis les yeux, dans l'axe du viseur, un peu vers le haut ; la salle calcule la trajectoire. */
+  private throwGrenade(kind: GFGrenade) {
+    const c = this.client!;
+    const me = c.game!.players[c.me];
+    const now = performance.now() / 1000;
+    if (!me?.grenades || me.grenades[kind] <= 0 || now < this.nextThrow) {
+      if (me?.grenades && me.grenades[kind] <= 0) sfx.dryFire();
+      return;
+    }
+    this.nextThrow = now + 0.8;
+    const p = this.player!;
+    const dir = this.cam.camera.getWorldDirection(new THREE.Vector3());
+    const k = p.controller;
+    const origin: Vec3 = [k.x + dir.x * 0.4, k.y + 1.55, k.z + dir.z * 0.4];
+    const sp = 17;
+    const vel: Vec3 = [dir.x * sp + k.realVx * 0.5, dir.y * sp + 4, dir.z * sp + k.realVz * 0.5];
+    p.animator.throwGrenade();
+    sfx.swing();
+    this.sendPoseNow();
+    c.throwGrenade(kind, origin, vel).catch((e: Error) => this.onFeedback(e.message));
+  }
+
+  /** Grenade lancée (par n'importe qui) : un objet suit la trajectoire calculée par la salle. */
+  private onGrenade(g: GFGrenadeThrow) {
+    const anim = g.by === this.client?.me ? this.player?.animator : (this.remotes.get(g.by)?.anim ?? this.bots.get(g.by)?.ch.animator);
+    if (g.by !== this.client?.me) anim?.throwGrenade();
+    const geo = g.kind === 'frag' ? new THREE.SphereGeometry(0.045, 10, 8).scale(1, 1.25, 1) : new THREE.CylinderGeometry(0.03, 0.03, 0.11, 10);
+    const mat = new THREE.MeshStandardMaterial({ color: g.kind === 'frag' ? '#3f4a2e' : g.kind === 'flash' ? '#6b7076' : '#5c6266', roughness: 0.6, metalness: 0.4 });
+    const mesh = new THREE.Mesh(geo, mat);
+    mesh.position.set(...g.path[0]);
+    this.scene.add(mesh);
+    this.flying.set(g.id, { g, mesh, done: false });
+  }
+
+  private updateGrenades(dt: number) {
+    const c = this.client;
+    if (!c?.game) return;
+    const t = c.serverNow();
+    for (const [id, f] of this.flying) {
+      const u = (t - f.g.t0) / 50; // un point tous les 1/20 s
+      const i = Math.min(f.g.path.length - 1, Math.max(0, Math.floor(u)));
+      const a = f.g.path[i];
+      const b = f.g.path[Math.min(f.g.path.length - 1, i + 1)];
+      const k = Math.min(1, Math.max(0, u - i));
+      f.mesh.position.set(a[0] + (b[0] - a[0]) * k, a[1] + (b[1] - a[1]) * k, a[2] + (b[2] - a[2]) * k);
+      f.mesh.rotation.x += dt * 9;
+      if (t >= f.g.explodeAt) {
+        this.explodeFx(f.g.kind, f.mesh.position.clone());
+        f.mesh.removeFromParent();
+        this.flying.delete(id);
+      }
+    }
+    for (const b of this.blasts) {
+      b.life -= dt;
+      const x = 1 - b.life / b.max;
+      b.s.scale.setScalar(b.grow * (0.4 + x * 0.9));
+      b.s.material.opacity = Math.max(0, b.life / b.max);
+    }
+    this.blasts = this.blasts.filter((b) => (b.life > 0 ? true : (b.s.removeFromParent(), false)));
+    this.blastLife = Math.max(0, this.blastLife - dt);
+    this.blastLight.intensity = this.blastLife > 0 ? 400 * (this.blastLife / 0.35) ** 2 : 0;
+    // nuages de fumée : grosses volutes qui gonflent puis se dissipent
+    const live = new Set<number>();
+    for (const sm of c.game.smokes) {
+      const key = sm.from;
+      live.add(key);
+      let list = this.smokeSprites.get(key);
+      if (!list) {
+        list = [];
+        for (let i = 0; i < 26; i++) {
+          const s = new THREE.Sprite(new THREE.SpriteMaterial({ map: puffTexture(), color: '#c9c9c4', transparent: true, depthWrite: false, opacity: 0 }));
+          const a = Math.random() * Math.PI * 2;
+          const r = Math.sqrt(Math.random()) * sm.r * 0.8;
+          s.position.set(sm.x + Math.cos(a) * r, sm.y + 0.6 + Math.random() * 2.6, sm.z + Math.sin(a) * r);
+          s.userData.size = 3 + Math.random() * 2.5;
+          s.material.rotation = Math.random() * 6;
+          this.scene.add(s);
+          list.push(s);
+        }
+        this.smokeSprites.set(key, list);
+      }
+      const age = (t - sm.from) / 1000;
+      const left = (sm.until - t) / 1000;
+      const k = Math.min(1, age / 1.5) * Math.min(1, left / 2.5);
+      for (const s of list) {
+        s.scale.setScalar(s.userData.size * (0.5 + 0.5 * Math.min(1, age / 2)));
+        s.material.opacity = 0.92 * k;
+        s.material.rotation += dt * 0.05;
+      }
+    }
+    for (const [key, list] of this.smokeSprites)
+      if (!live.has(key)) {
+        for (const s of list) s.removeFromParent();
+        this.smokeSprites.delete(key);
+      }
+  }
+
+  /** Effets d'une explosion : boule de feu et lumière (grenade), éclair blanc (aveuglante), son. */
+  private explodeFx(kind: GFGrenade, at: THREE.Vector3) {
+    const d = this.player ? this.player.root.position.distanceTo(at) : 0;
+    const gain = Math.max(0.1, 1 - d / 120);
+    if (kind === 'fumee') {
+      sfx.smoke(gain);
+      return;
+    }
+    const add = (color: string, size: number, life: number, y = 0) => {
+      const s = new THREE.Sprite(new THREE.SpriteMaterial({ map: puffTexture(), color, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending }));
+      s.position.copy(at).add(new THREE.Vector3(0, y, 0));
+      this.scene.add(s);
+      this.blasts.push({ s, life, max: life, grow: size });
+    };
+    if (kind === 'frag') {
+      add('#ffd08a', 5, 0.35, 0.4);
+      add('#ff7a2a', 4, 0.5, 0.6);
+      for (let i = 0; i < 6; i++) {
+        const s = new THREE.Sprite(new THREE.SpriteMaterial({ map: puffTexture(), color: '#3a3632', transparent: true, depthWrite: false }));
+        s.position.copy(at).add(new THREE.Vector3((Math.random() - 0.5) * 2, 0.5 + Math.random() * 1.5, (Math.random() - 0.5) * 2));
+        this.scene.add(s);
+        this.blasts.push({ s, life: 1.6 + Math.random(), max: 2.4, grow: 3 + Math.random() * 2 });
+      }
+      this.blastLight.color.set('#ffb35a');
+      sfx.explosion(gain);
+    } else {
+      add('#ffffff', 3, 0.25, 0.3);
+      this.blastLight.color.set('#e8f0ff');
+      sfx.flashbang(gain);
+    }
+    this.blastLight.position.copy(at).add(new THREE.Vector3(0, 0.8, 0));
+    this.blastLife = 0.35;
+  }
+
+  /** La ligne de vue traverse-t-elle un nuage de fumigène ? (robots) */
+  private smokeBlocks(a: THREE.Vector3, b: THREE.Vector3) {
+    for (const sm of this.client?.game?.smokes ?? []) {
+      const c = new THREE.Vector3(sm.x, sm.y + 1.5, sm.z);
+      const ab = b.clone().sub(a);
+      const t = THREE.MathUtils.clamp(c.clone().sub(a).dot(ab) / ab.lengthSq(), 0, 1);
+      if (a.clone().addScaledVector(ab, t).distanceTo(c) < sm.r * 0.85) return true;
+    }
+    return false;
   }
 
   private randomSpawn(): [number, number] {
@@ -418,7 +581,7 @@ export class GunfightGame {
       this.item = me.weapons[0] ?? 'pistolet';
     }
     const alive = !!me?.alive;
-    const frozen = !playing || this.paused || !alive;
+    const frozen = !playing || this.paused || !alive || this.kitOpen;
     const m = this.input.takeMouse();
     if (!this.paused) this.cam.look(m.dx, m.dy, 0);
     if (!this.paused && this.input.consume('KeyV')) this.cam.toggle(p);
@@ -426,7 +589,12 @@ export class GunfightGame {
     // seules les armes permises (réglages de la salle, palier de progression) se sortent
     const allowed = me?.weapons ?? SLOTS;
     if (alive && !allowed.includes(this.item)) this.switchTo(allowed[0]);
-    SLOTS.forEach((w, i) => !frozen && this.input.consume(`Digit${i + 1}`) && allowed.includes(w) && this.switchTo(w));
+    // 1 : arme principale, 2 : secondaire, 3 : couteau (dans l'ordre de l'équipement)
+    for (let i = 0; i < 3; i++) if (this.input.consume(`Digit${i + 1}`) && !frozen && allowed[i]) this.switchTo(allowed[i]);
+    for (let i = 3; i < 6; i++) this.input.consume(`Digit${i + 1}`);
+    // grenades : G fragmentation, F aveuglante, C fumigène ; B : équipement
+    for (const [code, kind] of [['KeyG', 'frag'], ['KeyF', 'flash'], ['KeyC', 'fumee']] as [string, GFGrenade][]) if (this.input.consume(code) && !frozen) this.throwGrenade(kind);
+    if (this.input.consume('KeyB') && playing && !this.paused) this.onLoadout();
     if (!frozen && Math.abs(m.wheel) > 20 && allowed.length > 1) {
       const i = Math.max(0, allowed.indexOf(this.item));
       this.switchTo(allowed[(i + (m.wheel > 0 ? 1 : -1) + allowed.length) % allowed.length]);
@@ -504,6 +672,7 @@ export class GunfightGame {
       (t.line.material as THREE.LineBasicMaterial).opacity = Math.max(0, t.life / 0.12);
     }
     this.tracers = this.tracers.filter((t) => (t.life > 0 ? true : (t.line.removeFromParent(), false)));
+    this.updateGrenades(dt);
   }
 
   /** Rayon du cône de dispersion à l'écran (px), pour le viseur. */
@@ -750,7 +919,19 @@ export class GunfightGame {
         b.fall = 0;
         b.target = null;
         b.thinkAt = now + reaction;
-        b.weapon = botWeapon(st.weapons);
+        // équipement tiré au hasard parmi les armes permises, puis arme principale en main
+        if (g.settings.arsenal === 'libre') {
+          const pick = (l: GFGun[]) => {
+            const ok = l.filter((w) => g.settings.weapons.includes(w));
+            return ok[Math.floor(Math.random() * ok.length)] ?? null;
+          };
+          try {
+            c.room.setLoadout(id, { primary: pick(PRIMARIES), secondary: pick(SECONDARIES) });
+          } catch {
+            /* partie terminée */
+          }
+        }
+        b.weapon = c.room.allowed(id)[0];
       }
       if (!st.alive) {
         b.fall = Math.min(1, b.fall + dt / 0.6);
@@ -760,7 +941,7 @@ export class GunfightGame {
       }
       b.tag.visible = true;
       // armes permises (réglages, palier de progression) : il change d'arme si la sienne ne l'est plus
-      if (!st.weapons.includes(b.weapon)) b.weapon = botWeapon(st.weapons);
+      if (!st.weapons.includes(b.weapon)) b.weapon = st.weapons[0] ?? 'couteau';
       const gun = isGun(b.weapon) ? b.weapon : null;
       const W = gun ? WEAPONS[gun] : null;
       const [near, far] = BOT_RANGE[b.weapon];
@@ -777,6 +958,7 @@ export class GunfightGame {
           const d = pos.distanceTo(op);
           if (d > Math.min(W?.range ?? 40, 70)) continue;
           if (!world.lineClear(...chest(pos), ...chest(op))) continue;
+          if (this.smokeBlocks(new THREE.Vector3(...chest(pos)), new THREE.Vector3(...chest(op)))) continue;
           if (!best || d < best.d) best = { id: oid, d };
         }
         if (best && best.id !== b.target) b.nextShot = now + reaction;
@@ -813,6 +995,17 @@ export class GunfightGame {
             } catch {
               /* trop tôt : il recommencera */
             }
+          }
+        } else if (st.grenades?.frag > 0 && d > 8 && d < 24 && now >= b.nextShot && Math.random() < dt * 0.7) {
+          // de temps en temps, une grenade vers la cible
+          b.nextShot = now + 1;
+          const e: Vec3 = [pos.x, pos.y + 1.55, pos.z];
+          const flat = Math.max(1, d);
+          const vh = Math.min(16, Math.sqrt((GRENADES.gravity * flat) / Math.sin(2 * 0.6)));
+          try {
+            c.room.throwGrenade(id, 'frag', e, [(dx / d) * vh * Math.cos(0.6), vh * Math.sin(0.6), (dz / d) * vh * Math.cos(0.6)]);
+          } catch {
+            /* plus de grenade */
           }
         } else if (st.reloadUntil) {
           // à couvert pendant le rechargement : il recule
@@ -878,15 +1071,35 @@ export class GunfightGame {
 }
 
 /** Distance de combat préférée des robots selon leur arme (m). */
-const BOT_RANGE: Record<GFWeapon, [number, number]> = { pistolet: [6, 15], fusil: [9, 22], pompe: [2, 7], precision: [22, 45], couteau: [0, 1] };
-/** Arme d'un robot, tirée au hasard parmi celles permises (les armes à feu d'abord). */
-function botWeapon(allowed: GFWeapon[]): GFWeapon {
-  const guns = allowed.filter(isGun);
-  if (!guns.length) return 'couteau';
-  const weight: Record<GFGun, number> = { fusil: 0.38, pistolet: 0.25, pompe: 0.2, precision: 0.17 };
-  let r = Math.random() * guns.reduce((a, g) => a + weight[g], 0);
-  for (const g of guns) if ((r -= weight[g]) <= 0) return g;
-  return guns[0];
+const BOT_RANGE: Record<GFWeapon, [number, number]> = {
+  pistolet: [6, 15],
+  revolver: [6, 18],
+  pm: [3, 10],
+  mitraillette: [4, 13],
+  fusil: [9, 22],
+  assaut: [10, 26],
+  tactique: [16, 38],
+  mitrailleuse: [10, 26],
+  pompe: [2, 7],
+  precision: [22, 45],
+  couteau: [0, 1],
+};
+
+let puffTex: THREE.Texture | null = null;
+/** Volute (fumée, boule de feu) : disque flou. */
+function puffTexture() {
+  if (puffTex) return puffTex;
+  const c = document.createElement('canvas');
+  c.width = c.height = 64;
+  const g = c.getContext('2d')!;
+  const grd = g.createRadialGradient(32, 32, 0, 32, 32, 32);
+  grd.addColorStop(0, 'rgba(255,255,255,0.95)');
+  grd.addColorStop(0.5, 'rgba(255,255,255,0.45)');
+  grd.addColorStop(1, 'rgba(255,255,255,0)');
+  g.fillStyle = grd;
+  g.fillRect(0, 0, 64, 64);
+  puffTex = new THREE.CanvasTexture(c);
+  return puffTex;
 }
 let dotTex: THREE.Texture | null = null;
 /** Point lumineux du laser (dégradé radial). */

@@ -93,17 +93,34 @@ planchers et toits dans la direction du regard (`Espace` / `C` pour monter / des
 point, on réapparaît au bout de 3 s loin des adversaires (1,5 s de protection). La partie s'arrête au score visé ou
 à la fin du temps.
 
-| Arme | Corps (de près) | Tête | Perte au loin | Cadence | Chargeur | Recharge | Portée |
-|---|---|---|---|---|---|---|---|
-| `1` Pistolet | 28 (4 balles) | ×2 | dès 18 m, −40 % à 45 m | coup par coup | 12 | 1,5 s | 60 m |
-| `2` Carabine | 24 (5 balles) | ×1,75 | dès 30 m, −35 % à 80 m | rafale (bouton maintenu) | 30 | 2,3 s | 110 m |
-| `3` Fusil à pompe | 9 plombs × 13 (mort à bout portant) | ×1,5 | dès 7 m, −75 % à 22 m | lente, pompe | 6 | 3 s | 30 m |
-| `4` Fusil de précision | 110 (mort d'une balle) | ×2,5 | aucune | très lente, culasse | 5 | 3,2 s | 450 m |
-| `5` Couteau | 60 | — | — | — | — | — | 2,3 m |
+Chaque joueur choisit son **équipement** (touche `B`, ou depuis l'écran d'élimination) : une arme principale
+(`1`), une secondaire (`2`), le couteau (`3`) ; le changement s'applique tout de suite pendant la protection
+d'apparition, sinon à la réapparition suivante.
+
+| Arme | Type | Corps (de près) | Tête | Cadence | Chargeur | Portée |
+|---|---|---|---|---|---|---|
+| Pistolet | secondaire | 28 | ×2 | coup par coup | 12 | 60 m |
+| Revolver | secondaire | 55 | ×2 | lente | 6 | 70 m |
+| Pistolet-mitrailleur | secondaire | 16 | ×1,5 | rafale très rapide | 20 | 40 m |
+| Mitraillette | principale | 21 | ×1,6 | rafale rapide | 32 | 60 m |
+| Carabine | principale | 24 | ×1,75 | rafale | 30 | 110 m |
+| Fusil d'assaut | principale | 30 | ×1,8 | rafale, recul fort | 30 | 120 m |
+| Fusil tactique | principale | 48 | ×2 | coup par coup, lunette ×2,4 | 15 | 200 m |
+| Mitrailleuse | principale | 27 | ×1,6 | rafale, 5 s de rechargement | 100 | 120 m |
+| Fusil à pompe | principale | 9 plombs × 13 | ×1,5 | lente | 6 | 30 m |
+| Fusil de précision | principale | 110 (mort d'une balle) | ×2,5 | très lente, lunette | 5 | 450 m |
+| Couteau | — | 60 | — | — | — | 2,3 m |
+
+Les dégâts baissent avec la distance (sauf au fusil de précision).
+
+**Équipement tactique** (option de la salle) : à chaque apparition, 2 grenades à fragmentation (`G` : jusqu'à 150
+dégâts, 7 m, on est protégé derrière un mur ; sa propre grenade blesse aussi), 1 grenade aveuglante (`F` : écran
+blanc jusqu'à 4 s, bien plus long si on regarde l'éclair) et 1 fumigène (`C` : nuage de 5,5 m pendant 15 s qui bouche
+la vue, robots compris). La salle calcule la trajectoire (rebonds sur les murs et le sol) et les effets.
 
 **Armes de la partie** (à la création) : *Armes au choix* (on coche celles qui sont permises) ou *Progression* :
-tout le monde commence au couteau, puis pistolet, fusil à pompe, carabine et fusil de précision, un palier tous
-les cinquièmes du score visé (le serveur refuse toute autre arme). 2 s d'invincibilité à chaque apparition
+tout le monde commence au couteau, puis pistolet, revolver, pistolet-mitrailleur, fusil à pompe, mitraillette,
+carabine, fusil d'assaut, fusil tactique, mitrailleuse et fusil de précision, un palier tous les onzièmes du score visé (le serveur refuse toute autre arme). 2 s d'invincibilité à chaque apparition
 (« Protégé »), perdue dès qu'on tire. Fin de partie : bannière « Partie terminée — Victoire ! / Défaite » avant
 le tableau des scores.
 

@@ -141,3 +141,24 @@ tr.me td { color: var(--gold-2); }
 .gf-maps.night .gf-prev canvas { filter: brightness(0.45) saturate(0.6) hue-rotate(190deg); }
 .gf-night-keys { display: none; }
 .gf-hud.night .gf-night-keys { display: inline; }
+
+/* grenades, aveuglement, équipement */
+.gf-nades { position: absolute; right: 18px; bottom: 92px; display: flex; gap: 8px; font-size: 12px; }
+.gf-nades span { background: rgba(10, 8, 6, 0.6); padding: 3px 8px; border-radius: 6px; }
+.gf-nades span.none { opacity: 0.4; }
+.gf-nades b { color: var(--gold); }
+.gf-slots { bottom: 124px; }
+.gf-blind { position: absolute; inset: 0; background: #fff; opacity: 0; pointer-events: none; }
+.gf-kit { position: absolute; inset: 0; display: grid; place-items: center; background: rgba(4, 6, 10, 0.72); z-index: 3; pointer-events: auto; }
+.gf-kit[hidden] { display: none; }
+.gf-kit-box { width: min(860px, calc(100vw - 32px)); max-height: calc(100vh - 40px); overflow-y: auto; background: var(--panel-2); border: 1px solid var(--line-2); border-radius: var(--radius); padding: 18px 20px; }
+.gf-kit-box h2 { margin: 0 0 4px; font: 700 24px var(--display); }
+.gf-kit-box h3 { margin: 14px 0 8px; font: 600 15px var(--display); color: var(--gold); }
+.gf-kit-row { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 8px; }
+.gf-kit-w { display: flex; flex-direction: column; align-items: flex-start; gap: 3px; padding: 10px; border: 1px solid var(--line); border-radius: var(--radius); background: rgba(255, 255, 255, 0.03); color: inherit; cursor: pointer; text-align: left; }
+.gf-kit-w .gf-wic { width: 60px; height: 20px; color: var(--gold); }
+.gf-kit-w small { color: var(--muted); font-size: 11px; }
+.gf-kit-w.on { border-color: var(--gold); background: rgba(212, 170, 90, 0.16); box-shadow: inset 0 0 0 1px var(--gold); }
+.gf-open-kit { margin-top: 12px; pointer-events: auto; }
+.gf-dead { pointer-events: none; }
+.gf-dead.open .gf-open-kit { pointer-events: auto; }

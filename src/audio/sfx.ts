@@ -129,6 +129,27 @@ export const sfx = {
       tone(b, out, 'sine', deep ? 90 : 120, 35, deep ? 0.8 : 0.6, 0.002, deep ? 0.5 : weapon === 'fusil' ? 0.18 : 0.3);
       if (weapon === 'precision') noise(b, out, 'bandpass', 900, 0.7, 0.25 * gain, 0.05, 0.9);
     }),
+  /** grenade : déflagration sourde et longue */
+  explosion: (gain = 1) =>
+    play((b) => {
+      const out = spatial(b, 0, gain);
+      noise(b, out, 'lowpass', 900, 0.6, 1.2, 0.002, 1.1);
+      tone(b, out, 'sine', 70, 28, 1.0, 0.003, 0.9);
+      noise(b, out, 'bandpass', 2500, 0.8, 0.25, 0.01, 0.5);
+    }),
+  /** grenade aveuglante : claquement sec puis sifflement */
+  flashbang: (gain = 1) =>
+    play((b) => {
+      const out = spatial(b, 0, gain);
+      noise(b, out, 'highpass', 1500, 0.5, 1.0, 0.001, 0.25);
+      tone(b, out, 'sine', 3400, 3300, 0.15 * gain, 0.05, 2.2);
+    }),
+  /** fumigène : chuintement */
+  smoke: (gain = 1) =>
+    play((b) => {
+      const out = spatial(b, 0, gain);
+      noise(b, out, 'bandpass', 3000, 0.4, 0.35, 0.05, 2.5);
+    }),
   /** balle dans la tête : tintement métallique net */
   headshot: () =>
     play((b) => {

@@ -23,7 +23,7 @@ import { setWorldQuaternion, solveArm } from './armIk';
 
 /** Objet tenu en main (un seul à la fois) : lampe, couteau, ou une arme à feu tenue à deux mains. */
 export type HandItem = 'lampe' | 'couteau' | GunKind | null;
-const GUN_KINDS: readonly string[] = ['pistolet', 'fusil', 'pompe', 'precision'];
+const GUN_KINDS: readonly string[] = ['pistolet', 'revolver', 'pm', 'mitraillette', 'fusil', 'assaut', 'tactique', 'mitrailleuse', 'pompe', 'precision'];
 export const isGunItem = (i: HandItem): i is GunKind => !!i && GUN_KINDS.includes(i);
 
 const _v1 = new THREE.Vector3();
@@ -246,6 +246,12 @@ export class CharacterAnimator {
     this.strikeT = 1;
   }
 
+  /** Lancer de grenade : la main gauche quitte l'arme, bras armé derrière puis projeté vers l'avant. */
+  throwGrenade() {
+    this.throwT = 1;
+  }
+  private throwT = 0;
+
   /** Tir : recul de l'arme, éclair du canon, puis réarmement (pompe, culasse). */
   fire() {
     this.fireT = 1;
@@ -355,6 +361,7 @@ export class CharacterAnimator {
     const pose: Pose = {};
     // objet en main : lampe pointée devant soi, couteau tenu bas, pistolet bras tendu dans l'axe de la visée
     this.strikeT = Math.max(0, this.strikeT - dt / 0.38);
+    this.throwT = Math.max(0, this.throwT - dt / 0.55);
     this.fireT = Math.max(0, this.fireT - dt / 0.22);
     if (this.air < 0.5) {
       if (this.item === 'lampe') {
@@ -452,7 +459,7 @@ export class CharacterAnimator {
       .multiply(_q1.setFromAxisAngle(AXIS_Z, g.kickUp * kick - 0.45 * lowered))
       .multiply(_q2.setFromAxisAngle(AXIS_X, -0.6 * lowered - (g.cycle === 'culasse' ? 0.25 * cyc : 0)));
     // pièces mobiles : culasse du pistolet au tir, pompe et levier au réarmement
-    for (const m of g.moving) m.position.x = g.kind === 'pistolet' ? -0.03 * kick : m.name === 'pompe' ? -0.09 * cyc : -0.06 * cyc;
+    for (const m of g.moving) m.position.x = !g.cycle ? -0.03 * kick : m.name === 'pompe' ? -0.09 * cyc : -0.06 * cyc;
     g.group.updateMatrixWorld(true);
     const gunQ = g.group.getWorldQuaternion(new THREE.Quaternion());
     const rootQ = this.root.getWorldQuaternion(new THREE.Quaternion());
@@ -462,6 +469,16 @@ export class CharacterAnimator {
     setWorldQuaternion(this.hand, gunQ.clone().multiply(HAND_R));
     this.curl(this.rFingers, this.hand, 1);
     // main gauche : soutien ; tire la pompe ; pendant le rechargement : chargeur → ceinture → chargeur
+    if (this.throwT > 0) {
+      // lancer : bras gauche armé en arrière et en haut, puis projeté vers l'avant
+      const u = 1 - this.throwT;
+      const wind = u < 0.45 ? u / 0.45 : 1 - (u - 0.45) / 0.55;
+      const fwd = u < 0.45 ? -0.25 * wind : 0.5 * Math.sin(((u - 0.45) / 0.55) * Math.PI);
+      const sh = R.LeftArm.getWorldPosition(new THREE.Vector3());
+      const target = sh.clone().add(new THREE.Vector3(0.1, 0.12 + 0.2 * wind, fwd).applyQuaternion(rootQ));
+      solveArm(R.LeftArm, R.LeftForeArm, this.lHand, target, new THREE.Vector3(0.6, -0.4, -0.6).applyQuaternion(rootQ));
+      return;
+    }
     const lLocal = g.leftWrist.clone();
     if (g.cycle === 'pompe') lLocal.x -= 0.09 * cyc;
     let lw = g.group.localToWorld(lLocal);

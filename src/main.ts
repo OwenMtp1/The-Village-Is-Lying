@@ -205,6 +205,7 @@ const gameUi = new GameUi({
     join: (code, n, sx) => gfCtl.join(code, n, sx),
     solo: (n, sx, o) => gfCtl.solo(n, sx, o),
   },
+  gfBusy: () => !!gfCtl?.hud.kitOpen,
   gfActive: () => !!gfCtl?.active,
   gfPauseCard: () => gfCtl.pauseCard(),
   quitGunfight: () => gfCtl.quit(),
@@ -376,7 +377,7 @@ setInterval(() => {
 setInterval(() => net.game && gameUi.render(), 250);
 
 app.addEventListener('click', () => {
-  if ((mode === 'solo' || mode === 'online' || (mode === 'gunfight' && !gfCtl.results.open)) && !gameUi.pause.open && net.game?.phase !== 'reunion') input.lock();
+  if ((mode === 'solo' || mode === 'online' || (mode === 'gunfight' && !gfCtl.results.open && !gfCtl.hud.kitOpen)) && !gameUi.pause.open && net.game?.phase !== 'reunion') input.lock();
 });
 
 gfCtl = new GunfightController(gfGame, gameUi.toasts, {
@@ -391,6 +392,7 @@ gfCtl = new GunfightController(gfGame, gameUi.toasts, {
     gameUi.backToMenu();
   },
   sight: (a, b) => village.collision.lineClear(a.x, a.y, a.z, b.x, b.y, b.z),
+  solid: (x: number, y: number, z: number) => village.collision.blocksPoint(x, y, z, 0),
 });
 
 setMode('menu');

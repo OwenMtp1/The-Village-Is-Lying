@@ -7,7 +7,9 @@
  */
 import * as THREE from 'three';
 
-export type GunKind = 'pistolet' | 'fusil' | 'pompe' | 'precision';
+export type GunKind = 'pistolet' | 'revolver' | 'pm' | 'mitraillette' | 'fusil' | 'assaut' | 'tactique' | 'mitrailleuse' | 'pompe' | 'precision';
+/** armes de poing (tenues bras tendus) */
+const HANDGUNS: GunKind[] = ['pistolet', 'revolver', 'pm'];
 
 export interface GunRig {
   kind: GunKind;
@@ -78,6 +80,93 @@ function parts(kind: GunKind): { parts: Part[]; muzzle: THREE.Vector3 } {
       [box(0.004, 0.018, 0.006, 0.026, 0.006, 0, 0.3), mat.steel], // détente
     ];
     muzzle = new THREE.Vector3(0.17, 0.05, 0);
+  } else if (kind === 'revolver') {
+    // revolver : long canon, barillet, carcasse, crosse en bois
+    p = [
+      [tube(0.011, 0.04, 0.2, 0.052), mat.steel], // canon
+      [box(0.012, 0.012, 0.012, 0.19, 0.068), mat.steel], // guidon
+      [box(0.09, 0.045, 0.028, 0.0, 0.045), mat.steel], // carcasse
+      [new THREE.CylinderGeometry(0.022, 0.022, 0.05, 10).rotateZ(Math.PI / 2).translate(0.01, 0.042, 0), mat.dark], // barillet
+      [box(0.034, 0.1, 0.028, -0.025, -0.025, 0, -0.32), mat.wood], // crosse
+      [new THREE.TorusGeometry(0.018, 0.003, 6, 14, Math.PI).rotateZ(Math.PI).translate(0.01, 0.018, 0), mat.steel],
+      [box(0.012, 0.016, 0.01, -0.04, 0.072, 0, 0.5), mat.steel, 'culasse'], // chien
+    ];
+    muzzle = new THREE.Vector3(0.205, 0.052, 0);
+  } else if (kind === 'pm') {
+    // pistolet-mitrailleur : carcasse compacte, long chargeur droit, cache-flamme
+    p = [
+      [box(0.17, 0.035, 0.03, 0.05, 0.048), mat.black, 'culasse'],
+      [box(0.13, 0.026, 0.028, 0.035, 0.02), mat.black],
+      [tube(0.009, 0.135, 0.17, 0.048), mat.dark],
+      [box(0.03, 0.2, 0.026, -0.012, -0.075, 0, -0.12), mat.dark], // poignée et long chargeur
+      [new THREE.TorusGeometry(0.018, 0.003, 6, 14, Math.PI).rotateZ(Math.PI).translate(0.03, 0.008, 0), mat.black],
+    ];
+    muzzle = new THREE.Vector3(0.175, 0.048, 0);
+  } else if (kind === 'mitraillette') {
+    // mitraillette : boîte compacte, canon court ajouré, chargeur droit, crosse repliable en fil d'acier
+    p = [
+      [box(0.24, 0.06, 0.045, 0.06, 0.035), mat.black],
+      [tube(0.017, 0.18, 0.36, 0.04), mat.dark], // manchon ajouré
+      [tube(0.008, 0.36, 0.4, 0.04), mat.black],
+      [box(0.035, 0.15, 0.03, 0.11, -0.07), mat.dark], // chargeur droit
+      [box(0.034, 0.085, 0.03, -0.01, -0.03, 0, -0.3), mat.black], // poignée
+      [box(0.18, 0.008, 0.008, -0.14, 0.05, 0.016), mat.steel], // crosse filaire
+      [box(0.18, 0.008, 0.008, -0.14, 0.05, -0.016), mat.steel],
+      [box(0.012, 0.06, 0.04, -0.23, 0.025), mat.steel],
+      [box(0.03, 0.02, 0.02, 0.0, 0.075), mat.black], // hausse
+    ];
+    muzzle = new THREE.Vector3(0.4, 0.04, 0);
+  } else if (kind === 'assaut') {
+    // fusil d'assaut : boîte de culasse, garde-main et crosse en bois, chargeur très courbé, guidon haut
+    p = [
+      [box(0.26, 0.055, 0.045, 0.07, 0.035), mat.dark],
+      [box(0.2, 0.05, 0.05, 0.3, 0.03), mat.wood], // garde-main
+      [tube(0.009, 0.4, 0.62, 0.045), mat.dark], // canon
+      [tube(0.007, 0.25, 0.48, 0.07), mat.dark], // tube emprunt des gaz
+      [box(0.012, 0.045, 0.012, 0.58, 0.07), mat.dark], // guidon
+      [tube(0.013, 0.6, 0.64, 0.045), mat.black], // frein de bouche
+      [box(0.045, 0.1, 0.034, 0.13, -0.045, 0, 0.3), mat.dark], // chargeur (haut)
+      [box(0.045, 0.08, 0.034, 0.16, -0.12, 0, 0.6), mat.dark], // chargeur (bas, courbé)
+      [box(0.034, 0.085, 0.03, -0.01, -0.035, 0, -0.3), mat.wood], // poignée
+      [box(0.24, 0.055, 0.038, -0.17, 0.0, 0, 0.12), mat.wood], // crosse
+      [box(0.012, 0.012, 0.03, 0.06, 0.068, 0.02), mat.steel, 'culasse'], // levier d'armement
+    ];
+    muzzle = new THREE.Vector3(0.64, 0.045, 0);
+  } else if (kind === 'tactique') {
+    // fusil tactique : long canon, garde-main ajouré, chargeur droit, lunette moyenne, crosse réglable
+    p = [
+      [box(0.28, 0.06, 0.045, 0.07, 0.035), mat.black],
+      [box(0.3, 0.05, 0.05, 0.35, 0.035), mat.dark],
+      [tube(0.01, 0.5, 0.74, 0.04), mat.dark],
+      [tube(0.015, 0.72, 0.77, 0.04), mat.black],
+      [box(0.04, 0.09, 0.032, 0.13, -0.04), mat.black],
+      [box(0.035, 0.09, 0.03, -0.01, -0.035, 0, -0.3), mat.black],
+      [box(0.22, 0.06, 0.04, -0.17, 0.015), mat.black],
+      [box(0.03, 0.11, 0.044, -0.27, 0.0), mat.dark],
+      [tube(0.019, -0.01, 0.24, 0.105), mat.dark], // lunette
+      [tube(0.025, 0.18, 0.25, 0.105), mat.dark],
+      [tube(0.024, 0.25, 0.252, 0.105), mat.glass],
+      [box(0.03, 0.03, 0.02, 0.03, 0.075), mat.black],
+      [box(0.03, 0.03, 0.02, 0.18, 0.075), mat.black],
+    ];
+    muzzle = new THREE.Vector3(0.77, 0.04, 0);
+  } else if (kind === 'mitrailleuse') {
+    // mitrailleuse : grosse boîte de culasse, canon lourd ventilé, boîte à bande, bipied, poignée de transport
+    p = [
+      [box(0.32, 0.08, 0.06, 0.07, 0.04), mat.dark],
+      [tube(0.016, 0.23, 0.7, 0.045), mat.dark], // canon lourd
+      [tube(0.024, 0.23, 0.45, 0.045), mat.black], // manchon de refroidissement
+      [tube(0.018, 0.68, 0.73, 0.045), mat.black],
+      [box(0.1, 0.1, 0.07, 0.1, -0.06, -0.01), mat.brass], // boîte à bande
+      [box(0.034, 0.085, 0.03, -0.03, -0.035, 0, -0.3), mat.black],
+      [box(0.26, 0.065, 0.045, -0.2, 0.01, 0, 0.08), mat.black], // crosse
+      [box(0.12, 0.012, 0.012, 0.22, 0.11), mat.black], // poignée de transport
+      [box(0.012, 0.03, 0.012, 0.17, 0.095), mat.black],
+      [box(0.012, 0.03, 0.012, 0.27, 0.095), mat.black],
+      [box(0.2, 0.01, 0.01, 0.58, -0.01, 0.02, 0.15), mat.black], // bipied replié
+      [box(0.2, 0.01, 0.01, 0.58, -0.01, -0.02, 0.15), mat.black],
+    ];
+    muzzle = new THREE.Vector3(0.73, 0.045, 0);
   } else if (kind === 'fusil') {
     // carabine : boîte de culasse, canon et garde-main, chargeur courbe, poignée pistolet, crosse, lunette courte
     p = [
@@ -148,12 +237,13 @@ export function gunRig(kind: GunKind): GunRig {
     mesh.castShadow = true;
     g.add(mesh);
   }
-  const flash = new THREE.Mesh(new THREE.SphereGeometry(kind === 'pistolet' ? 0.05 : 0.07, 8, 6).scale(1.8, 1, 1), flashMat.clone());
-  flash.position.copy(muzzle).add(new THREE.Vector3(kind === 'pistolet' ? 0.06 : 0.09, 0, 0));
+  const small = HANDGUNS.includes(kind);
+  const flash = new THREE.Mesh(new THREE.SphereGeometry(small ? 0.05 : kind === 'mitrailleuse' ? 0.09 : 0.07, 8, 6).scale(1.8, 1, 1), flashMat.clone());
+  flash.position.copy(muzzle).add(new THREE.Vector3(small ? 0.06 : 0.09, 0, 0));
   flash.name = 'eclair';
   g.add(flash);
   g.visible = false;
-  const long = kind !== 'pistolet';
+  const long = !small;
   // lampe sous le canon (près de la bouche), laser sur le flanc droit
   const ax = long ? muzzle.x * 0.62 : 0.1;
   const torch = new THREE.Group();
@@ -171,11 +261,22 @@ export function gunRig(kind: GunKind): GunRig {
     muzzle: muzzle.clone(),
     // poignet droit derrière et sous la poignée ; poignet gauche sous la main droite (pistolet) ou sous le garde-main
     rightWrist: new THREE.Vector3(-0.07, -0.015, 0.03),
-    leftWrist: long ? new THREE.Vector3(kind === 'precision' ? 0.24 : kind === 'pompe' ? 0.28 : 0.24, -0.045, -0.015) : new THREE.Vector3(-0.065, -0.045, -0.04),
+    leftWrist: long ? new THREE.Vector3(kind === 'mitraillette' ? 0.17 : kind === 'pompe' ? 0.28 : kind === 'mitrailleuse' ? 0.3 : 0.24, -0.045, -0.015) : new THREE.Vector3(-0.065, -0.045, -0.04),
     long,
-    kickBack: { pistolet: 0.05, fusil: 0.025, pompe: 0.07, precision: 0.08 }[kind],
-    kickUp: { pistolet: 0.22, fusil: 0.07, pompe: 0.2, precision: 0.16 }[kind],
-    magazine: { pistolet: new THREE.Vector3(-0.03, -0.1, 0), fusil: new THREE.Vector3(0.12, -0.12, 0), pompe: new THREE.Vector3(0.08, -0.03, 0.01), precision: new THREE.Vector3(0.07, -0.04, 0) }[kind],
+    kickBack: { pistolet: 0.05, revolver: 0.07, pm: 0.03, mitraillette: 0.02, fusil: 0.025, assaut: 0.03, tactique: 0.045, mitrailleuse: 0.025, pompe: 0.07, precision: 0.08 }[kind],
+    kickUp: { pistolet: 0.22, revolver: 0.4, pm: 0.12, mitraillette: 0.05, fusil: 0.07, assaut: 0.09, tactique: 0.12, mitrailleuse: 0.06, pompe: 0.2, precision: 0.16 }[kind],
+    magazine: {
+      pistolet: new THREE.Vector3(-0.03, -0.1, 0),
+      revolver: new THREE.Vector3(0.01, 0.03, -0.04),
+      pm: new THREE.Vector3(-0.03, -0.17, 0),
+      mitraillette: new THREE.Vector3(0.11, -0.14, 0),
+      fusil: new THREE.Vector3(0.12, -0.12, 0),
+      assaut: new THREE.Vector3(0.15, -0.14, 0),
+      tactique: new THREE.Vector3(0.13, -0.09, 0),
+      mitrailleuse: new THREE.Vector3(0.1, -0.1, -0.03),
+      pompe: new THREE.Vector3(0.08, -0.03, 0.01),
+      precision: new THREE.Vector3(0.07, -0.04, 0),
+    }[kind],
     cycle: kind === 'pompe' ? 'pompe' : kind === 'precision' ? 'culasse' : null,
     moving: g.children.filter((o) => o.name === 'pompe' || o.name === 'culasse'),
     torch,
