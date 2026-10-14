@@ -31,7 +31,9 @@ class Net {
   onGesture: (g: Gesture) => void = () => {};
 
   constructor() {
-    this.socket = io({ autoConnect: false, transports: ['websocket', 'polling'] });
+    // HTTP d'abord puis passage au WebSocket dès qu'il est possible : la connexion tient même quand un proxy, un
+    // pare-feu ou l'hébergeur bloque les WebSockets (avec WebSocket seul, aucune solution de repli n'était tentée)
+    this.socket = io({ autoConnect: false, transports: ['polling', 'websocket'], tryAllTransports: true, reconnectionDelayMax: 4000 });
     this.socket.on('connect_error', () => {
       this.failed = true;
       this.emit();

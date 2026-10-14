@@ -7,6 +7,11 @@ export default defineConfig({
     // le serveur de jeu (salons, parties) tourne à côté : npm run server
     proxy: { '/socket.io': { target: `http://localhost:${process.env.PORT ?? 3001}`, ws: true } },
   },
+  // `npm run preview` (pages compilées) : même relais vers le serveur de jeu
+  preview: {
+    port: 4173,
+    proxy: { '/socket.io': { target: `http://localhost:${process.env.PORT ?? 3001}`, ws: true } },
+  },
   build: {
     target: 'es2022',
     outDir: 'dist',

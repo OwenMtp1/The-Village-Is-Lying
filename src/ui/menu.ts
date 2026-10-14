@@ -145,7 +145,13 @@ export class MainMenu {
     // état réel du socket : jamais « connecté » sans connexion établie
     const s = net.connected ? 'connecte' : net.failed ? 'hors-ligne' : 'connexion';
     el.dataset.state = s;
-    el.textContent = s === 'connecte' ? 'Serveur de parties : connecté' : s === 'connexion' ? 'Serveur de parties : connexion…' : 'Serveur de parties : injoignable (nouvel essai automatique)';
+    const local = /^(localhost|127\.|192\.168\.|10\.)/.test(location.hostname);
+    el.textContent =
+      s === 'connecte'
+        ? 'Serveur de parties : connecté'
+        : s === 'connexion'
+          ? 'Serveur de parties : connexion…'
+          : `Serveur de parties : injoignable (nouvel essai automatique). ${local ? 'Lancez le jeu avec « npm run dev » (ou « npm run build » puis « npm start ») : la page seule ne suffit pas.' : 'Le serveur se réveille peut-être (hébergement gratuit : jusqu’à une minute) ; l’exploration solo reste disponible.'}`;
   }
 
   private needName(screen: Screen) {
