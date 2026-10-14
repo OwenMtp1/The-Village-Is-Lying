@@ -9,6 +9,8 @@
  */
 import { BUILDINGS, PLINTH, floorOf, groundHeight, localToWorld, type BuildingSpec } from './layout';
 import { FURN, INT_T, SLAB, planOf, stairRun, type Level, type Plan, type Rect, type Side } from '../village/plans';
+import { CELLS, CISTERN_POOL, ROOMS, SHAFTS, UNDER, entranceRocks, roomItems, slabRects, wallBoxes } from './underground';
+import { wallObstacles } from './boundary';
 
 /** Boîte orientée : centre (x, z), demi-dimensions (hx le long de l'axe tourné de `rot`), de y0 à y1. */
 export interface Obb {
@@ -425,8 +427,84 @@ export function addBuilding(w: CollisionWorld, b: BuildingSpec, plan: Plan = pla
 }
 
 /** Monde des collisions de tout le village (bâtiments seuls ; le décor s'ajoute ensuite). */
+/**
+ * Souterrains : murs (contour des galeries), sols, plafonds (percés sous les puits), puits d'accès avec échelle,
+ * superstructures des entrées, grilles des cellules, parapet de la citerne, mobilier massif.
+ */
+export function addUnderground(w: CollisionWorld) {
+  const box = (x0: number, x1: number, z0: number, z1: number, y0: number, y1: number, tag: string) =>
+    w.addObstacle({ x: (x0 + x1) / 2, z: (z0 + z1) / 2, hx: (x1 - x0) / 2, hz: (z1 - z0) / 2, rot: 0, y0, y1, tag });
+  const F = UNDER.floor;
+  const H = UNDER.height;
+  for (const b of wallBoxes()) box(b.x0, b.x1, b.z0, b.z1, b.y0, b.y1, 'souterrain:mur');
+  for (const r of slabRects(false)) w.addSurface({ x: (r.x0 + r.x1) / 2, z: (r.z0 + r.z1) / 2, hx: (r.x1 - r.x0) / 2, hz: (r.z1 - r.z0) / 2, rot: 0, y: F, thick: 0.3, tag: 'souterrain:sol' });
+  for (const r of slabRects(true)) w.addSurface({ x: (r.x0 + r.x1) / 2, z: (r.z0 + r.z1) / 2, hx: (r.x1 - r.x0) / 2, hz: (r.z1 - r.z0) / 2, rot: 0, y: F + H + 0.4, thick: 0.4, tag: 'souterrain:plafond' });
+  const h = UNDER.shaft / 2;
+  for (const s of SHAFTS) {
+    // puits : parois de la galerie jusqu'à la surface (la paroi de sortie, côté +z, s'arrête 2 m sous le sol pour
+    // laisser passer le corps en haut de l'échelle), niche au pied, terrain percé, échelle (rampe raide vers +z)
+    const top = s.ground;
+    const n = UNDER.niche;
+    box(s.x - h - 0.4, s.x - h, s.z - h - n - 0.4, s.z + h + 0.4, F + H, top - 0.05, 'souterrain:puits');
+    box(s.x + h, s.x + h + 0.4, s.z - h - n - 0.4, s.z + h + 0.4, F + H, top - 0.05, 'souterrain:puits');
+    box(s.x - h, s.x + h, s.z - h - n - 0.4, s.z - h - n, F + H, top - 0.05, 'souterrain:puits');
+    box(s.x - h, s.x + h, s.z + h, s.z + h + 0.4, F + H, top - 2.0, 'souterrain:puits');
+    w.holes.push({ x: s.x, z: s.z, rot: 0, hw: h, hd: h });
+    // échelle : du pied (dans la niche) jusqu'au bord du trou, un peu au-delà pour reprendre pied sur le terrain
+    const z0 = s.z - h - 0.6;
+    const z1 = s.z + h + 0.2;
+    w.addSurface({ x: s.x, z: (z0 + z1) / 2, hx: (z1 - z0) / 2, hz: 0.45, rot: -Math.PI / 2, y: F, rise: top - F, thick: 0, tag: 'souterrain:echelle' });
+    // en surface : margelle ou mausolée (ouverts côté +z, d'où part l'échelle)
+    const rim = s.look === 'puits' ? 0.85 : s.look === 'mausolee' ? 0 : 0.2;
+    if (rim > 0) {
+      box(s.x - h - 0.35, s.x - h, s.z - h - 0.35, s.z + h + 0.35, top - 0.3, top + rim, 'entree');
+      box(s.x + h, s.x + h + 0.35, s.z - h - 0.35, s.z + h + 0.35, top - 0.3, top + rim, 'entree');
+      box(s.x - h, s.x + h, s.z - h - 0.35, s.z - h, top - 0.3, top + rim, 'entree');
+    }
+    if (s.look === 'mausolee') {
+      const m = 2.2;
+      box(s.x - m - 0.4, s.x - m, s.z - m, s.z + m + 1.2, top - 0.3, top + 3.2, 'mausolee');
+      box(s.x + m, s.x + m + 0.4, s.z - m, s.z + m + 1.2, top - 0.3, top + 3.2, 'mausolee');
+      box(s.x - m - 0.4, s.x + m + 0.4, s.z - m - 0.4, s.z - m, top - 0.3, top + 3.2, 'mausolee');
+      box(s.x - m - 0.4, s.x - 0.65, s.z + m + 1.2, s.z + m + 1.6, top - 0.3, top + 3.2, 'mausolee');
+      box(s.x + 0.65, s.x + m + 0.4, s.z + m + 1.2, s.z + m + 1.6, top - 0.3, top + 3.2, 'mausolee');
+      // un muret autour du puits dans le mausolée (ouvert vers la porte)
+      box(s.x - h - 0.3, s.x - h, s.z - h - 0.3, s.z + h, top, top + 0.5, 'mausolee');
+      box(s.x + h, s.x + h + 0.3, s.z - h - 0.3, s.z + h, top, top + 0.5, 'mausolee');
+      box(s.x - h, s.x + h, s.z - h - 0.3, s.z - h, top, top + 0.5, 'mausolee');
+    }
+  }
+  // grilles des cellules (ouvertes : une porte de 0,9 m) et murs entre cellules
+  for (const c of CELLS) {
+    const door = c.open ? [c.x0 + 0.5, c.x0 + 1.4] : null;
+    if (door) {
+      box(c.x0, door[0], c.bars - 0.04, c.bars + 0.04, F, F + H, 'grille');
+      box(door[1], c.x1, c.bars - 0.04, c.bars + 0.04, F, F + H, 'grille');
+    } else box(c.x0, c.x1, c.bars - 0.04, c.bars + 0.04, F, F + H, 'grille');
+    box(c.x1 - 0.12, c.x1 + 0.12, Math.min(c.z0, c.z1), Math.max(c.z0, c.z1), F, F + H, 'cellule');
+  }
+  const P = CISTERN_POOL;
+  for (const [x0, x1, z0, z1] of [
+    [P.x0 - 0.3, P.x1 + 0.3, P.z0 - 0.3, P.z0],
+    [P.x0 - 0.3, P.x1 + 0.3, P.z1, P.z1 + 0.3],
+    [P.x0 - 0.3, P.x0, P.z0, P.z1],
+    [P.x1, P.x1 + 0.3, P.z0, P.z1],
+  ])
+    box(x0, x1, z0, z1, F, F + 0.6, 'citerne');
+  box(P.x0, P.x1, P.z0, P.z1, F, F + 0.6, 'citerne:eau');
+  for (const it of roomItems()) {
+    if (!it.solid) continue;
+    const [sw, sd, sh] = it.solid;
+    w.addObstacle({ x: it.x, z: it.z, hx: sw / 2 - 0.05, hz: sd / 2 - 0.05, rot: it.rot, y0: F - 0.05, y1: F + sh, tag: `souterrain:${it.type}` });
+  }
+  for (const r of entranceRocks()) w.addObstacle({ x: r.x, z: r.z, hx: r.w / 2, hz: r.d / 2, rot: r.rot, y0: SHAFTS[0].ground - 3, y1: 50, tag: 'rocher' });
+  void ROOMS;
+}
+
 export function buildCollisionWorld(): CollisionWorld {
   const w = new CollisionWorld();
+  addUnderground(w);
+  for (const o of wallObstacles()) w.addObstacle(o);
   for (const b of BUILDINGS) addBuilding(w, b);
   return w;
 }

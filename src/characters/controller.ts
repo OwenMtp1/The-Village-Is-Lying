@@ -140,7 +140,25 @@ export class CharacterController {
     const r = this.world.resolve(nx, nz, MOVE.radius, this.y + (this.grounded ? MOVE.stepUp * 0.6 : 0), this.height - 0.1);
     nx = r.x;
     nz = r.z;
-    const g = this.world.groundAt(nx, nz, stepTop);
+    let g = this.world.groundAt(nx, nz, stepTop);
+    if (!this.grounded) {
+      // en l'air au-dessus d'une pente qui monte : on reprend pied sur le sol s'il est à portée de marche,
+      // sinon c'est un mur (on ne s'enfonce jamais sous le terrain)
+      const up = this.world.groundAt(nx, nz, this.y + MOVE.stepUp);
+      const wall = this.world.groundAt(nx, nz, this.y + this.height);
+      if (up !== -Infinity && up > this.y) {
+        this.y = up;
+        if (this.vy <= 0) {
+          this.vy = 0;
+          this.grounded = true;
+        }
+        g = up;
+      } else if (wall > this.y + MOVE.stepUp) {
+        nx = ox;
+        nz = oz;
+        g = this.world.groundAt(nx, nz, this.y + 0.05);
+      }
+    }
     if (g === -Infinity || (this.grounded && g < this.y - 3)) {
       // bord d'un vide : on autorise la chute (trémie, rebord) — sauf hors du monde
       if (g === -Infinity && this.world.groundAt(nx, nz, 1e6) === -Infinity) {

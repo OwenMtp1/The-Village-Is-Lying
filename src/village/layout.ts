@@ -544,8 +544,12 @@ export interface Viewpoint {
   target: [number, number, number];
 }
 
+/** Zones réservées (entrées des souterrains) : ni arbre, ni décor n'y est posé. */
+export const KEEP_OUT: { x: number; z: number; r: number }[] = [];
+
 /** Zone libre (pas de bâtiment, pas de rue, pas de place) pour y poser décor ou végétation. */
 export function isFree(x: number, z: number, margin = 1): boolean {
+  for (const k of KEEP_OUT) if (Math.hypot(x - k.x, z - k.z) < k.r + margin) return false;
   if (BUILDINGS.some((b) => insideBuilding(b, x, z, margin))) return false;
   if (roadDistance(x, z).d < margin) return false;
   if (polygonDistance(x, z, PLAZA) < margin || polygonDistance(x, z, CHURCH_SQUARE) < margin) return false;

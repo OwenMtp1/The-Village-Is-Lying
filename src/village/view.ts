@@ -12,6 +12,7 @@ import { GTAOPass } from 'three/examples/jsm/postprocessing/GTAOPass.js';
 import { OutputPass } from 'three/examples/jsm/postprocessing/OutputPass.js';
 import { BUILDINGS, heightAt, insideBuilding, roadDistance } from './layout';
 import { buildSky, setupAtmosphere, type Atmosphere } from './atmosphere';
+import { SHAFTS, UNDER, undergroundPlace } from './underground';
 import type { Village } from './village';
 import type { Input } from '../input';
 
@@ -47,8 +48,22 @@ export function viewpoints(village: Village): Viewpoint[] {
     const m = village.buildings.find((b) => b.spec.id === id)!.matrix;
     return { id: `in-${id}-${label}`, label, group: 'Intérieurs', mode: 'vol', pos: new THREE.Vector3(...pos).applyMatrix4(m), target: new THREE.Vector3(...target).applyMatrix4(m) };
   };
+  const F = UNDER.floor;
+  const sh = (id: string) => SHAFTS.find((s) => s.id === id)!;
+  const m = sh('mausolee');
+  const under: Viewpoint[] = [
+    { id: 'u-conseil', label: 'Souterrains — Salle du Conseil secret', group: 'Intérieurs', mode: 'vol', pos: v(-9, F + 1.75, -31), target: v(0, F + 0.7, -38.5) },
+    { id: 'u-geoles', label: 'Souterrains — Geôles oubliées', group: 'Intérieurs', mode: 'vol', pos: v(-31, F + 1.7, -58), target: v(-47, F + 1.0, -58) },
+    { id: 'u-citerne', label: 'Souterrains — Citerne', group: 'Intérieurs', mode: 'vol', pos: v(13, F + 2.0, 23), target: v(28, F + 0.2, 35) },
+    { id: 'u-crypte', label: 'Souterrains — Crypte des Aubin', group: 'Intérieurs', mode: 'vol', pos: v(9, F + 1.9, -97), target: v(21, F + 0.4, -107) },
+    { id: 'u-galerie', label: 'Souterrains — galerie sous la place', group: 'Intérieurs', mode: 'vol', pos: v(-4, F + 1.7, -12), target: v(-4, F + 1.4, 20) },
+    { id: 'u-chapelle', label: 'Souterrains — Chapelle des Pénitents', group: 'Intérieurs', mode: 'vol', pos: v(-86, F + 1.8, -29), target: v(-86, F + 0.8, -41) },
+    { id: 'e-mausolee', label: 'Entrée secrète — Mausolée', group: 'Extérieurs', mode: 'orbite', pos: v(m.x + 7, m.ground + 3.5, m.z + 9), target: v(m.x, m.ground + 1.2, m.z + 0.5) },
+    { id: 'e-verger', label: 'Entrée secrète — puits du verger', group: 'Extérieurs', mode: 'orbite', pos: v(sh('verger').x + 4, sh('verger').ground + 2.6, sh('verger').z + 5), target: v(sh('verger').x, sh('verger').ground + 0.5, sh('verger').z) },
+  ];
   return [
     ...ext,
+    ...under,
     ins('taverne', 'Taverne — grande salle', [-5.6, 1.7, 4.4], [5.5, 1.1, -0.5]),
     ins('taverne', 'Taverne — cave', [-3, -0.85, 3.5], [5, -1.8, -3]),
     ins('taverne', 'Taverne — étage', [-6.2, 3.4 + 1.65, -2.5], [6, 3.4 + 1.2, -2.6]),
@@ -305,7 +320,8 @@ export class VillageView {
     // jamais sous le sol (sauf dans une cave : le terrain y est percé)
     const ground = heightAt(cam.position.x, cam.position.z);
     const inCellar = this.village.buildings.some((b) => b.cellarHole && insideBuilding(b.spec, cam.position.x, cam.position.z, -0.3));
-    if (!this.driver && !inCellar && cam.position.y < ground + 0.35) cam.position.y = ground + 0.35;
+    const inGallery = undergroundPlace(cam.position.x, cam.position.y, cam.position.z) !== null;
+    if (!this.driver && !inCellar && !inGallery && cam.position.y < ground + 0.35) cam.position.y = ground + 0.35;
 
     // dans quel bâtiment est la caméra ? (toits auto, lumières intérieures prioritaires)
     this.insideId = null;
@@ -323,6 +339,12 @@ export class VillageView {
       b.roof.visible = this.roofMode === 'visible' ? true : this.roofMode === 'masque' ? false : !over;
       b.interior.visible = d < 55;
     }
+    // sous terre : les galeries deviennent « la pièce » (lanternes prioritaires, ni ciel ni lune) ;
+    // en surface, elles ne sont dessinées que près d'une entrée
+    const under = cam.position.y < UNDER.floor + UNDER.height + 1 || (undergroundPlace(cam.position.x, cam.position.y, cam.position.z) !== null && cam.position.y < heightAt(cam.position.x, cam.position.z) - 0.5);
+    if (under) this.insideId = 'souterrain';
+    this.atmo.setUnderground(under);
+    this.village.underground.visible = under || cam.position.y < -1 || SHAFTS.some((s) => Math.hypot(s.x - cam.position.x, s.z - cam.position.z) < 30);
     if (this.insideId !== this.lastInside) {
       this.lastInside = this.insideId;
       this.atmo.invalidate();
@@ -361,6 +383,8 @@ export class VillageView {
 
   /** Nom du lieu en un point : bâtiment (s'il est dedans), place, rue, ou bâtiment le plus proche. */
   placeAt(p: THREE.Vector3): string {
+    const u = undergroundPlace(p.x, p.y + 0.5, p.z);
+    if (u) return u;
     for (const b of this.village.buildings) {
       if (!insideBuilding(b.spec, p.x, p.z, -0.15)) continue;
       const fy = b.matrix.elements[13];

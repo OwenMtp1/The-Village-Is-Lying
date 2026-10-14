@@ -119,6 +119,8 @@ export interface Atmosphere {
   activeLights(): number;
   /** 0 = pleine nuit, 1 = plein jour (aube et crépuscule entre les deux) */
   setDaylight(d: number): void;
+  /** caméra sous terre : ni lune, ni soleil, ni ciel ; seules les lanternes éclairent */
+  setUnderground(on: boolean): void;
   readonly daylight: number;
 }
 
@@ -183,6 +185,12 @@ export function setupAtmosphere(renderer: THREE.WebGLRenderer, scene: THREE.Scen
       if (m && m.emissiveIntensity > 0 && m.emissive && (m.name === 'litWindow' || m.emissive.getHex() === 0xffc874)) glowing.set(m, m.emissiveIntensity);
     });
   };
+  let under = false;
+  const setUnderground = (on: boolean) => {
+    if (on === under) return;
+    under = on;
+    daylight = -1; // force la mise à jour
+  };
   const setDaylight = (d: number) => {
     d = THREE.MathUtils.clamp(d, 0, 1);
     if (Math.abs(d - daylight) < 1e-4 && glowing.size) return;
@@ -203,6 +211,14 @@ export function setupAtmosphere(renderer: THREE.WebGLRenderer, scene: THREE.Scen
     hemi.intensity = THREE.MathUtils.lerp(0.65, 1.5, d);
     scene.environmentIntensity = THREE.MathUtils.lerp(0.22, 0.75, d);
     lightScale = 1 - 0.85 * d;
+    if (under) {
+      moon.intensity = 0;
+      hemi.intensity = 0.05;
+      scene.environmentIntensity = 0.02;
+      fog.color.set('#07080b');
+      (scene.background as THREE.Color).copy(fog.color);
+      lightScale = 1;
+    }
     glowMats();
     for (const [m, base] of glowing) m.emissiveIntensity = base * (1 - 0.75 * d);
   };
@@ -213,6 +229,7 @@ export function setupAtmosphere(renderer: THREE.WebGLRenderer, scene: THREE.Scen
       return daylight;
     },
     setDaylight,
+    setUnderground,
     moon,
     hemi,
     update(dt, camera, focus, inside) {
@@ -230,7 +247,8 @@ export function setupAtmosphere(renderer: THREE.WebGLRenderer, scene: THREE.Scen
         reassign = 0.2;
         const cam = camera.position;
         const scored = anchors
-          .filter((a) => !a.indoor || (inside !== null ? a.building === inside : tmp.set(a.x, a.y, a.z).distanceTo(cam) < 22))
+          // les lanternes des souterrains n'éclairent que sous terre (elles traverseraient le sol)
+          .filter((a) => (inside === 'souterrain' ? a.building === 'souterrain' : !a.indoor || (inside !== null ? a.building === inside : a.building !== 'souterrain' && tmp.set(a.x, a.y, a.z).distanceTo(cam) < 22)))
           .map((a) => {
             const d = tmp.set(a.x, a.y, a.z).distanceTo(cam);
             // les lumières de la pièce où l'on se trouve passent en priorité

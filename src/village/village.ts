@@ -3,6 +3,8 @@
  * végétation. La construction est découpée en étapes qui rendent la main au navigateur (barre de progression,
  * page réactive pendant le chargement).
  */
+import { SHAFTS, UNDER } from './underground';
+import { buildUnderground } from './undergroundMesh';
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { BUILDINGS } from './layout';
@@ -17,6 +19,8 @@ export interface Village {
   root: THREE.Group;
   buildings: BuiltBuilding[];
   lights: WorldLight[];
+  /** galeries souterraines (masquées quand la caméra est loin d'elles) */
+  underground: THREE.Group;
   terrain: Terrain;
   /** collisions (murs, portes, planchers, escaliers, mobilier, décor, troncs) */
   collision: CollisionWorld;
@@ -84,7 +88,11 @@ export async function buildVillage(progress: (f: number, label: string) => void 
   progress(0.66, 'Terrain et chemins');
   await frame();
   const terrain = buildTerrain(buildings.flatMap((b) => b.doors));
-  terrain.setHoles(buildings.flatMap((b) => (b.cellarHole ? [b.cellarHole] : [])));
+  // terrain percé au droit des caves et des puits d'accès aux souterrains
+  terrain.setHoles([...buildings.flatMap((b) => (b.cellarHole ? [b.cellarHole] : [])), ...SHAFTS.map((s) => ({ x: s.x, z: s.z, rot: 0, hw: UNDER.shaft / 2, hd: UNDER.shaft / 2 }))]);
+  progress(0.7, 'Souterrains');
+  await frame();
+  const under = buildUnderground(props);
   progress(0.76, 'Forêt et végétation');
   await frame();
   const veg = buildVegetation();
@@ -95,13 +103,14 @@ export async function buildVillage(progress: (f: number, label: string) => void 
   progress(0.92, 'Mobilier et objets');
   await frame();
   const propMesh = props.build();
-  root.add(terrain.mesh, propMesh, decor.mesh, veg.group);
+  root.add(terrain.mesh, propMesh, decor.mesh, veg.group, under.group);
   const bgroup = new THREE.Group();
   bgroup.name = 'batiments';
   for (const b of buildings) bgroup.add(b.group);
   root.add(bgroup, mergeFacades(buildings));
-  const lights = [...buildings.flatMap((b) => b.lights), ...decor.lights];
+  const lights = [...buildings.flatMap((b) => b.lights), ...decor.lights, ...under.lights];
   return {
+    underground: under.group,
     root,
     buildings,
     lights,

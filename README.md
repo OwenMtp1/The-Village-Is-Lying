@@ -86,6 +86,26 @@ planchers et toits dans la direction du regard (`Espace` / `C` pour monter / des
   faisceau puissant qui suit le regard, avec ombres ; les lampes allumées des autres joueurs sont visibles.
   Réglages : `src/characters/flashlight.ts` et `DAY_CYCLE` dans `src/shared/rules.ts`.
 
+## Souterrains
+
+À 8 m sous le village, un réseau de galeries éclairées de lanternes, étayées de bois, relie huit salles :
+**crypte des Aubin** (tombeaux, autel), **geôles oubliées** (douze cellules à barreaux, certaines ouvertes),
+**salle du Conseil secret** (table ronde, bannières), **réserve des contrebandiers**, **laboratoire de l'alchimiste**,
+**citerne** (bassin d'eau noire), **chapelle des Pénitents**, **ossuaire**. Deux boyaux étroits et obscurs doublent
+le réseau : le tunnel d'évasion (d'une cellule des geôles jusqu'à la crypte) et le passage des contrebandiers
+(de la citerne à la réserve).
+
+Cinq entrées discrètes, éloignées les unes des autres, descendent par une échelle au fond d'un puits : un
+**mausolée** à l'est du cimetière, un **puits asséché** dans le verger, une **trappe derrière les écuries** (entre
+les bottes de foin), une **trappe dans le jardin de la maison abandonnée** et une ouverture **entre les rochers de la
+lisière**. Sous terre, ni lune ni ciel : seules les lanternes éclairent ; le nom de la salle s'affiche.
+Données : `src/village/underground.ts` (partagées avec le serveur, lignes de vue comprises), rendu :
+`src/village/undergroundMesh.ts`, tests : `tests/underground.test.ts` (descente et remontée par chaque entrée avec
+le vrai contrôleur, toutes les salles reliées).
+
+La carte est bordée d'un **mur invisible** (cercle de 295 m, juste avant le bord du terrain) : on ne peut pas en
+sortir, même en sautant (le vol libre de l'exploration solo le traverse).
+
 ## Son et vie du décor
 
 - Tous les sons sont **synthétisés par le navigateur** (Web Audio, `src/audio/`) : vent, grillons et chouette la

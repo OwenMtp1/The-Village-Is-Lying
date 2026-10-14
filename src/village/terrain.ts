@@ -157,8 +157,8 @@ export function buildTerrain(doors: { x: number; z: number; nx: number; nz: numb
   const cobble = VM.cobbleTex().map;
 
   const mat = new THREE.MeshStandardMaterial({ color: '#ffffff', roughness: 0.95, metalness: 0 });
-  const holes = Array.from({ length: 8 }, () => new THREE.Vector4(0, 0, 0, 0));
-  const holeRot = new Array(8).fill(0);
+  const holes = Array.from({ length: 24 }, () => new THREE.Vector4(0, 0, 0, 0));
+  const holeRot = new Array(24).fill(0);
   const uniforms = {
     tSplat: { value: splat },
     tGrass: { value: grass },
@@ -181,8 +181,8 @@ export function buildTerrain(doors: { x: number; z: number; nx: number; nz: numb
         varying vec3 vWPos;
         uniform sampler2D tSplat, tGrass, tDirt, tCobble;
         uniform float splatScale;
-        uniform vec4 holes[8];
-        uniform float holeRot[8];
+        uniform vec4 holes[24];
+        uniform float holeRot[24];
         uniform int holeCount;
         vec4 splatV; float hgtV;
         vec3 perturbTerrain(vec3 surf_pos, vec3 surf_norm, vec2 dHdxy, float faceDir) {
@@ -196,7 +196,7 @@ export function buildTerrain(doors: { x: number; z: number; nx: number; nz: numb
       .replace(
         '#include <clipping_planes_fragment>',
         /* glsl */ `#include <clipping_planes_fragment>
-        for (int i = 0; i < 8; i++) {
+        for (int i = 0; i < 24; i++) {
           if (i >= holeCount) break;
           vec2 d = vWPos.xz - holes[i].xy;
           float c = cos(holeRot[i]); float s = sin(holeRot[i]);
@@ -239,7 +239,7 @@ export function buildTerrain(doors: { x: number; z: number; nx: number; nz: numb
   return {
     mesh,
     setHoles(h) {
-      const n = Math.min(8, h.length);
+      const n = Math.min(24, h.length);
       for (let i = 0; i < n; i++) {
         holes[i].set(h[i].x, h[i].z, h[i].hw, h[i].hd);
         // rotation monde → local du bâtiment (même convention que worldToLocal)
