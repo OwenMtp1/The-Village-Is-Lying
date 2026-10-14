@@ -417,3 +417,37 @@ test('grenades : trajectoire avec rebonds, éclats à couvert ou non, aveuglemen
   assert.equal(room.gameView().smokes.length, 0);
   void wall;
 });
+
+test('cartes retravaillées : couverts déterministes, loin des apparitions, qui arrêtent les balles ; camps en équipes', async () => {
+  const { gunfightProps } = await import('../src/shared/gunfightWorld');
+  const { propsClear, spawnSide } = await import('../src/shared/gunfightProps');
+  const counts: string[] = [];
+  for (const m of GF_MAPS) {
+    const props = gunfightProps(m.id);
+    counts.push(`${m.id} ${props.length}`);
+    assert.ok(props.length >= 6, `${m.id} : ${props.length} couverts`);
+    for (const p of props) for (const s of m.spawns) assert.ok(Math.hypot(p.x - s.x, p.z - s.z) >= 4, `${m.id} : couvert sur un point d'apparition`);
+    assert.equal(gunfightProps(m.id), props, 'calculés une fois');
+    // une balle tirée à travers un couvert est arrêtée
+    const p = props[0];
+    const a = { x: p.x - Math.cos(p.rot) * 4, y: p.y + 0.8, z: p.z + Math.sin(p.rot) * 4 };
+    const b = { x: p.x + Math.cos(p.rot) * 4, y: p.y + 0.8, z: p.z - Math.sin(p.rot) * 4 };
+    assert.equal(propsClear(props, a, b), false, `${m.id} : ${p.kind} traversé`);
+    // deux camps opposés
+    const sides = m.spawns.map((s) => spawnSide(m, s));
+    assert.ok(sides.filter((s) => s === 'rouge').length >= 3 && sides.filter((s) => s === 'bleu').length >= 3, `${m.id} : camps`);
+  }
+  console.log('couverts :', counts.join(', '));
+  // sous terre, la vue n'est pas bouchée par le terrain (Salle du Conseil secret)
+  const { gunfightWorld } = await import('../src/shared/gunfightWorld');
+  assert.ok(gunfightWorld().lineClear(-8, -6.7, -35, 0, -6.7, -35), 'ligne de vue dans les souterrains');
+  // en équipes, chacun apparaît dans son camp
+  const { room, ids } = setup({ mode: 'equipes', map: 'place' }, 4);
+  room.setTeam(ids[0], 'rouge');
+  room.setTeam(ids[1], 'bleu');
+  room.start(ids[0]);
+  const map = mapOf('place');
+  const at = (id: string) => ({ x: room.stateOf(id)!.spawn.x, z: room.stateOf(id)!.spawn.z });
+  assert.equal(spawnSide(map, at(ids[0])), 'rouge');
+  assert.equal(spawnSide(map, at(ids[1])), 'bleu');
+});

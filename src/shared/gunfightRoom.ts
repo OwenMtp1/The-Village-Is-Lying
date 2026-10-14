@@ -11,6 +11,7 @@ import { assignAppearances } from '../characters/appearance';
 import { VARIANTS, type Sex } from '../characters/catalog';
 import type { PlayerPose } from './protocol';
 import { insideMap, mapOf } from './gunfightMaps';
+import { inProp, propsClear, spawnSide, type GFProp } from './gunfightProps';
 import { GF_RULES, GRENADES, GRENADE_KINDS, GUNS, WEAPONS, WEAPON_NAMES, allowedWeapons, cleanLoadout, defaultLoadout, progressionTier, damageAt, type GFGrenade, type GFGrenadeThrow, type GFLoadout, cleanSettings, isGun, normalize, rayHitBody, type GFGun, type GFShotResult, type GFWeapon, type Vec3, type GFEvent, type GFGameView, type GFKill, type GFLobbyView, type GFPlayerState, type GFSettings, type GFShot, type Team } from './gunfight';
 
 export interface GFOutput {
@@ -115,8 +116,18 @@ export class GunfightRoom {
     private random: () => number = Math.random,
     private sight: Sight = () => true,
     private solid: Solid = (_x, y) => y < 0,
+    /** couverts de chaque carte (caisses, charrettes…) : ils arrêtent les balles et les grenades */
+    private propsOf: (map: string) => GFProp[] = () => [],
   ) {
     this.settings = cleanSettings(settings);
+  }
+
+  private get props() {
+    return this.propsOf(this.settings.map);
+  }
+  /** Ligne de vue : décor et couverts de la carte. */
+  private clear(a: { x: number; y: number; z: number }, b: { x: number; y: number; z: number }) {
+    return this.sight(a, b) && propsClear(this.props, a, b);
   }
 
   // ───────────────────────── salon ─────────────────────────
@@ -245,7 +256,10 @@ export class GunfightRoom {
       .filter(([pid, o]) => pid !== id && o.alive && (this.settings.mode === 'ffa' || this.players.get(pid)?.team !== team))
       .map(([pid]) => this.poses.get(pid))
       .filter((p): p is PlayerPose & { t: number } => !!p);
-    const scored = mapOf(this.settings.map).spawns.map(({ x, y, z }) => ({ x, y: y ?? null, z, d: enemies.length ? Math.min(...enemies.map((e) => Math.hypot(e.x - x, e.z - z))) : this.random() * 100 }))
+    const map = mapOf(this.settings.map);
+    // en équipes : on apparaît dans son camp (côté de la carte), loin des adversaires
+    const own = this.settings.mode === 'equipes' && team ? map.spawns.filter((sp) => spawnSide(map, sp) === team) : [];
+    const scored = (own.length ? own : map.spawns).map(({ x, y, z }) => ({ x, y: y ?? null, z, d: enemies.length ? Math.min(...enemies.map((e) => Math.hypot(e.x - x, e.z - z))) : this.random() * 100 }))
       .sort((a, b) => b.d - a.d)
       .slice(0, 4);
     const p = scored[Math.floor(this.random() * scored.length)] ?? { x: 0, y: null, z: 0 };
@@ -319,7 +333,8 @@ export class GunfightRoom {
     s.grenades[kind]--;
     s.shieldUntil = 0;
     const fuse = GRENADES[kind].fuse;
-    const path = grenadePath(origin, [vel[0] * k, vel[1] * k, vel[2] * k], fuse, this.solid);
+    const props = this.props;
+    const path = grenadePath(origin, [vel[0] * k, vel[1] * k, vel[2] * k], fuse, (x, y, z) => this.solid(x, y, z) || inProp(props, x, y, z));
     const g = { id: ++this.grenadeSeq, by: id, kind, path, t0: t, explodeAt: t + fuse * 1000, at: path[path.length - 1] };
     this.thrown.push(g);
     const { at: _at, ...view } = g;
@@ -345,7 +360,7 @@ export class GunfightRoom {
       const d = Math.hypot(eye.x - c.x, eye.y - c.y, eye.z - c.z);
       if (g.kind === 'flash') {
         const R = GRENADES.flash.radius;
-        if (d > R || !this.sight(c, eye)) continue;
+        if (d > R || !this.clear(c, eye)) continue;
         // face à l'éclair : aveuglé longtemps ; dos tourné : à peine
         const look = [Math.sin(q.yaw) * Math.cos(q.pitch), Math.sin(q.pitch), Math.cos(q.yaw) * Math.cos(q.pitch)];
         const dot = d < 0.1 ? 1 : (look[0] * (c.x - eye.x) + look[1] * (c.y - eye.y) + look[2] * (c.z - eye.z)) / d;
@@ -359,7 +374,7 @@ export class GunfightRoom {
       if (vs.shieldUntil > t) continue;
       const chest = { x: q.x, y: q.y + CHEST, z: q.z };
       const dd = Math.hypot(chest.x - c.x, chest.y - c.y, chest.z - c.z);
-      if (dd > GRENADES.frag.radius || !(this.sight(c, chest) || this.sight(c, eye))) continue;
+      if (dd > GRENADES.frag.radius || !(this.clear(c, chest) || this.clear(c, eye))) continue;
       const dmg = Math.round(GRENADES.frag.damage * (1 - dd / GRENADES.frag.radius) ** 1.3);
       if (dmg > 0 && this.state.get(g.by)) this.damage(vid, g.by, dmg, 'grenade', false);
     }
@@ -514,7 +529,7 @@ export class GunfightRoom {
     if (!best) return null;
     const pt = { x: best.at[0], y: best.at[1], z: best.at[2] };
     // un mur entre le tireur (ou sa caméra) et l'impact arrête la balle
-    if (!this.sight({ x: eye[0], y: eye[1], z: eye[2] }, pt) || !this.sight({ x: o[0], y: o[1], z: o[2] }, pt)) return null;
+    if (!this.clear({ x: eye[0], y: eye[1], z: eye[2] }, pt) || !this.clear({ x: o[0], y: o[1], z: o[2] }, pt)) return null;
     return best;
   }
 
@@ -528,7 +543,7 @@ export class GunfightRoom {
     const p = this.poses.get(id)!;
     const q = this.poses.get(target);
     const ts = this.state.get(target);
-    const ok = !!q && !!ts && ts.alive && this.enemy(id, target) && ts.shieldUntil <= t && Math.hypot(q.x - p.x, q.z - p.z, (q.y - p.y) * 1.5) <= GF_RULES.knifeRange && this.facing(id, target) <= GF_RULES.knifeAngle && this.sight({ x: p.x, y: p.y + CHEST, z: p.z }, { x: q.x, y: q.y + CHEST, z: q.z });
+    const ok = !!q && !!ts && ts.alive && this.enemy(id, target) && ts.shieldUntil <= t && Math.hypot(q.x - p.x, q.z - p.z, (q.y - p.y) * 1.5) <= GF_RULES.knifeRange && this.facing(id, target) <= GF_RULES.knifeAngle && this.clear({ x: p.x, y: p.y + CHEST, z: p.z }, { x: q.x, y: q.y + CHEST, z: q.z });
     this.out.shot({ by: id, from: [p.x, p.y + CHEST, p.z], to: [q ? [q.x, q.y + CHEST, q.z] : [p.x, p.y + CHEST, p.z]], hit: ok ? target : null, head: false, weapon: 'couteau' });
     if (!ok) return { hit: false, killed: false, head: false };
     return { hit: true, killed: this.damage(target, id, GF_RULES.knifeDamage, 'couteau', false), head: false };

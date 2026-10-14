@@ -22,6 +22,8 @@ export interface Obb {
   y0: number;
   y1: number;
   tag?: string;
+  /** désactivée (couverts d'une carte Gunfight qui n'est pas jouée) */
+  off?: boolean;
 }
 
 /** Surface praticable : rectangle orienté, à hauteur fixe ou en rampe (de `y` à `y + rise` le long de son axe x local). */
@@ -87,6 +89,17 @@ export class CollisionWorld {
   private tmpO: Obb[] = [];
   private tmpS: Surface[] = [];
 
+  /** Couverts d'une carte Gunfight : ajoutés une fois (étiquette `gf:<carte>`), activés seulement sur cette carte. */
+  setGunfightProps(key: string | null, make: () => Obb[]) {
+    if (key && !this.gfProps.has(key)) {
+      const list = make();
+      for (const o of list) this.obstacles.add(o);
+      this.gfProps.set(key, list);
+    }
+    for (const [k, list] of this.gfProps) for (const o of list) o.off = k !== key;
+  }
+  private gfProps = new Map<string, Obb[]>();
+
   addObstacle(o: Obb) {
     this.obstacles.add(o);
   }
@@ -150,7 +163,7 @@ export class CollisionWorld {
     for (let iter = 0; iter < 4; iter++) {
       let moved = false;
       for (const o of this.obstacles.near(x, z, this.tmpO)) {
-        if (o.y1 <= y + 0.05 || o.y0 >= y + h) continue;
+        if (o.off || o.y1 <= y + 0.05 || o.y0 >= y + h) continue;
         const [lx, lz] = toLocal(o, x, z);
         const cx = Math.max(-o.hx, Math.min(o.hx, lx));
         const cz = Math.max(-o.hz, Math.min(o.hz, lz));
@@ -198,7 +211,7 @@ export class CollisionWorld {
   /** Un point (caméra) est-il dans un obstacle ou sous un plancher ? */
   blocksPoint(x: number, y: number, z: number, pad = 0.15): boolean {
     for (const o of this.obstacles.near(x, z, this.tmpO)) {
-      if (y < o.y0 - pad || y > o.y1 + pad) continue;
+      if (o.off || y < o.y0 - pad || y > o.y1 + pad) continue;
       const [lx, lz] = toLocal(o, x, z);
       if (Math.abs(lx) < o.hx + pad && Math.abs(lz) < o.hz + pad) return true;
     }
@@ -207,7 +220,11 @@ export class CollisionWorld {
       const top = this.surfaceAt(s, x, z);
       if (top !== null && y > top - s.thick - pad && y < top + pad) return true;
     }
-    return !this.inHole(x, z) && y < groundHeight(x, z) + pad;
+    // le terrain est plein sur 3,5 m d'épaisseur : en dessous, les souterrains (qui ont leurs propres
+    // plafonds et murs) restent praticables pour les lignes de vue, la caméra et les grenades
+    if (this.inHole(x, z)) return false;
+    const gy = groundHeight(x, z);
+    return y < gy + pad && y > gy - 3.5;
   }
 
   /**

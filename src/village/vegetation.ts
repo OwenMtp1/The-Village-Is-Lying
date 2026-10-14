@@ -221,9 +221,11 @@ class Scatter {
 /** Distance minimale d'un arbre à un bâtiment (les houppiers ne traversent pas les toits). */
 const nearBuilding = (x: number, z: number, m: number) => BUILDINGS.some((b) => insideBuilding(b, x, z, m));
 
-export function buildVegetation(): { group: THREE.Group; obstacles: Obb[] } {
-  const g = new THREE.Group();
-  g.name = 'vegetation';
+/**
+ * Placement de la végétation (sans géométrie) : instances par espèce et obstacles (troncs, gros rochers). Rapide et
+ * sans rendu : le serveur s'en sert pour connaître les arbres (couverts du Gunfight, lignes de vue).
+ */
+export function scatterVegetation(): { sc: Scatter; obstacles: Obb[] } {
   const sc = new Scatter();
   const r = rng(4242);
   const [cx, cz] = VILLAGE_CENTER;
@@ -354,6 +356,25 @@ export function buildVegetation(): { group: THREE.Group; obstacles: Obb[] } {
       obstacles.push({ x: p.x, z: p.z, hx: r * 0.75, hz: r * 0.75, rot: 0, y0: p.y - 0.5, y1: p.y + (kind === 'rock' ? 0.7 * s.y : 4), tag: kind });
     }
   }
+
+  return { sc, obstacles };
+}
+
+let scattered: ReturnType<typeof scatterVegetation> | null = null;
+/** Obstacles de la végétation (troncs et rochers), calculés une fois. */
+export function vegetationObstacles(): Obb[] {
+  scattered ??= scatterVegetation();
+  return scattered.obstacles;
+}
+
+export function buildVegetation(): { group: THREE.Group; obstacles: Obb[] } {
+  const g = new THREE.Group();
+  g.name = 'vegetation';
+  scattered ??= scatterVegetation();
+  const { sc, obstacles } = scattered;
+  const [cx, cz] = VILLAGE_CENTER;
+  void cx;
+  void cz;
 
   // géométries
   const geos: Record<string, THREE.BufferGeometry> = {

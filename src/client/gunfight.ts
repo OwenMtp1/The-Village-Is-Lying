@@ -21,6 +21,8 @@ import { sfx } from '../audio/sfx';
 import { LocalGF, type GFClient } from './gfNet';
 import { insideMap, mapOf, type GFMap } from '../shared/gunfightMaps';
 import { lookDir, type Flashlights } from '../characters/flashlight';
+import { gunfightProps } from '../shared/gunfightWorld';
+import { buildPropsGroup, propObstacles } from '../village/gunfightPropsMesh';
 import { rayHitBody } from '../shared/gunfight';
 import type { MiniDot } from '../ui/gfMinimap';
 
@@ -91,6 +93,9 @@ export class GunfightGame {
   private blastLife = 0;
   private smokeSprites = new Map<number, THREE.Sprite[]>();
   private nextThrow = 0;
+  /** couverts de la carte jouée (maillages par carte, collisions activées seulement sur cette carte) */
+  private propsMap: string | null = null;
+  private propMeshes = new Map<string, THREE.Group>();
   /** ouverture du choix d'équipement (touche B) ; panneau ouvert : commandes gelées */
   onLoadout: () => void = () => {};
   kitOpen = false;
@@ -177,11 +182,25 @@ export class GunfightGame {
     return t ? TEAM_COLOR[t] : '#f0d9a6';
   }
 
+  /** Couverts de la carte (ou aucun) : maillages visibles et collisions actives. */
+  private setProps(map: string | null) {
+    if (map === this.propsMap) return;
+    this.propsMap = map;
+    const props = map ? gunfightProps(map) : [];
+    this.village.collision.setGunfightProps(map ? `gf:${map}` : null, () => propObstacles(props));
+    if (map && !this.propMeshes.has(map)) this.propMeshes.set(map, buildPropsGroup(props));
+    for (const [k, g] of this.propMeshes) {
+      if (k === map) this.scene.add(g);
+      else g.removeFromParent();
+    }
+  }
+
   /** Crée les personnages (apparences tirées par la salle). */
   async ensure() {
     const c = this.client;
     const g = c?.game;
     if (!c || !g || this.player || this.loading) return;
+    this.setProps(g.settings.map);
     this.loading = true;
     const gen = this.generation;
     try {
@@ -243,6 +262,7 @@ export class GunfightGame {
     for (const list of this.smokeSprites.values()) for (const sp of list) sp.removeFromParent();
     this.smokeSprites.clear();
     this.blastLight.intensity = 0;
+    this.setProps(null);
     this.laserLine.visible = false;
     for (const d of this.dots) d.visible = false;
     this.torchOn = this.laserOn = true;

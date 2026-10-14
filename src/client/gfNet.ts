@@ -7,6 +7,7 @@ import type { Sex } from '../characters/catalog';
 import type { PlayerPose } from '../shared/protocol';
 import type { GFEvent, GFGameView, GFGrenade, GFGrenadeThrow, GFGun, GFLoadout, GFLobbyView, GFSettings, GFShot, GFShotResult, Team, Vec3 } from '../shared/gunfight';
 import { GunfightRoom } from '../shared/gunfightRoom';
+import { gunfightProps } from '../shared/gunfightWorld';
 import { net } from './net';
 
 type Listener = () => void;
@@ -176,6 +177,7 @@ export class LocalGF extends GFClient {
       Math.random,
       sight,
       solid,
+      gunfightProps,
     );
     const me = this.room.join(name, sex);
     this.me = me.id;

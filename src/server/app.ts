@@ -11,6 +11,7 @@ import { Server } from 'socket.io';
 import { Room, RoomError, type SightTest } from './room';
 import { gunfightServer } from './gunfightServer';
 import { buildCollisionWorld, type CollisionWorld } from '../village/collision';
+import { gunfightProps, gunfightWorld } from '../shared/gunfightWorld';
 import type { ClientToServer, ServerToClient, Ack, EventKind, Gesture } from '../shared/protocol';
 
 const LETTERS = 'ABCDEFGHJKLMNPQRSTUVWXYZ';
@@ -60,7 +61,16 @@ export function createGameServer(opts: { staticDir?: string; random?: () => numb
     }
   };
   const newCode = () => makeCode(() => false);
-  const gunfight = gunfightServer(io, sight, makeCode, opts.random, (x, y, z) => world.blocksPoint(x, y, z, 0));
+  // Gunfight : monde de référence (bâtiments, terrain, arbres) partagé avec le navigateur, couverts de chaque carte
+  const gw = gunfightWorld();
+  const gunfight = gunfightServer(
+    io,
+    (a, b) => gw.lineClear(a.x, a.y, a.z, b.x, b.y, b.z),
+    makeCode,
+    opts.random,
+    (x, y, z) => gw.blocksPoint(x, y, z, 0),
+    gunfightProps,
+  );
 
   const output = (code: string) => ({
     lobby: (v: Parameters<ServerToClient['salon:etat']>[0]) => io.to(code).emit('salon:etat', v),

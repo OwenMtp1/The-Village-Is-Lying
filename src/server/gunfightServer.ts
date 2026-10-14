@@ -6,6 +6,7 @@
 import { randomBytes, randomInt } from 'node:crypto';
 import type { Server, Socket } from 'socket.io';
 import { GFError, GunfightRoom, type Solid } from '../shared/gunfightRoom';
+import type { GFProp } from '../shared/gunfightProps';
 import type { Ack, ClientToServer, ServerToClient } from '../shared/protocol';
 
 type IO = Server<ClientToServer, ServerToClient>;
@@ -13,7 +14,7 @@ type Sight = (a: { x: number; y: number; z: number }, b: { x: number; y: number;
 
 const cryptoRandom = () => randomInt(0, 2 ** 31) / 2 ** 31;
 
-export function gunfightServer(io: IO, sight: Sight, newCode: (taken: (c: string) => boolean) => string, random: () => number = cryptoRandom, solid?: Solid) {
+export function gunfightServer(io: IO, sight: Sight, newCode: (taken: (c: string) => boolean) => string, random: () => number = cryptoRandom, solid?: Solid, propsOf?: (map: string) => GFProp[]) {
   const rooms = new Map<string, GunfightRoom>();
   const channel = (code: string) => `gf:${code}`;
   void randomBytes;
@@ -61,7 +62,7 @@ export function gunfightServer(io: IO, sight: Sight, newCode: (taken: (c: string
       guard(ack, () => {
         leave(true);
         const code = newCode((c) => rooms.has(c));
-        const r = new GunfightRoom(code, p?.settings, output(code), Date.now, random, sight, solid);
+        const r = new GunfightRoom(code, p?.settings, output(code), Date.now, random, sight, solid, propsOf);
         const m = r.join(p?.name, p?.sex);
         rooms.set(code, r);
         attach(r, m.id);

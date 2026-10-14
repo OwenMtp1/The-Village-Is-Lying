@@ -135,6 +135,14 @@ salles à 8 m sous terre), *Le Quartier des Tisserands* (rues serrées entre les
 *La Forêt de la Lisière* (sous-bois). Chacune a ses points d'apparition et une limite invisible (« Limite de la
 carte ») ; le serveur refuse les positions hors carte. Définitions : `src/shared/gunfightMaps.ts`.
 
+Les cartes sont aménagées pour le combat, à la manière des cartes de Call of Duty ou de Counter-Strike, sans
+changer le village : des **couverts** dans le style de chaque lieu (caisses et piles de caisses, tonneaux,
+charrettes chargées, barricades dans les rues ; murets de pierre au cimetière ; bottes de foin à la ferme ; troncs
+couchés et rochers en forêt ; caisses et tonneaux dans les salles souterraines) cassent les longues lignes de tir,
+arrêtent les balles et les grenades ; en équipes, chaque camp apparaît de son côté de la carte. Les couverts sont
+calculés à l'identique par le serveur et le navigateur (`src/shared/gunfightProps.ts`, monde de référence
+`src/shared/gunfightWorld.ts`).
+
 **Mini-carte** en bas à gauche (tournée selon le regard) : coéquipiers en blanc, adversaires en rouge seulement
 pendant 3 s après un tir.
 
