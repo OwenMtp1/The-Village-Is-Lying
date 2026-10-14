@@ -11,7 +11,7 @@ import { assignAppearances } from '../characters/appearance';
 import { VARIANTS, type Sex } from '../characters/catalog';
 import type { PlayerPose } from './protocol';
 import { insideMap, mapOf } from './gunfightMaps';
-import { GF_RULES, GUNS, WEAPONS, damageAt, cleanSettings, isGun, normalize, rayHitBody, type GFGun, type GFShotResult, type GFWeapon, type Vec3, type GFEvent, type GFGameView, type GFKill, type GFLobbyView, type GFPlayerState, type GFSettings, type GFShot, type Team } from './gunfight';
+import { GF_RULES, GUNS, WEAPONS, WEAPON_NAMES, allowedWeapons, progressionTier, damageAt, cleanSettings, isGun, normalize, rayHitBody, type GFGun, type GFShotResult, type GFWeapon, type Vec3, type GFEvent, type GFGameView, type GFKill, type GFLobbyView, type GFPlayerState, type GFSettings, type GFShot, type Team } from './gunfight';
 
 export interface GFOutput {
   lobby(v: GFLobbyView): void;
@@ -47,7 +47,7 @@ export class GunfightRoom {
   settings: GFSettings;
   phase: GFLobbyView['phase'] = 'salon';
   private seq = 0;
-  private state = new Map<string, GFPlayerState & { nextShotAt: number; nextStabAt: number }>();
+  private state = new Map<string, Omit<GFPlayerState, 'weapons'> & { nextShotAt: number; nextStabAt: number }>();
   private poses = new Map<string, PlayerPose & { t: number }>();
   /** positions récentes (compensation de la latence des tirs) */
   private history = new Map<string, Past[]>();
@@ -212,7 +212,7 @@ export class GunfightRoom {
     s.respawnAt = 0;
     s.shieldUntil = t + GF_RULES.spawnShield * 1000;
     s.spawn = { x: p.x, y: p.y, z: p.z, yaw, n: s.spawn.n + 1 };
-    this.poses.set(id, { x: p.x, y: p.y ?? 0, z: p.z, yaw, speed: 0, grounded: true, vy: 0, dir: 1, torch: false, pitch: 0, item: 'pistolet', t });
+    this.poses.set(id, { x: p.x, y: p.y ?? 0, z: p.z, yaw, speed: 0, grounded: true, vy: 0, dir: 1, torch: false, pitch: 0, item: this.allowed(id)[0], t });
     this.history.set(id, []);
   }
 
@@ -220,6 +220,11 @@ export class GunfightRoom {
     const m = this.players.get(id);
     if (!m) throw new GFError('Joueur inconnu.');
     return m;
+  }
+
+  /** Armes permises à ce joueur (réglages de la salle, palier de progression). */
+  allowed(id: string): GFWeapon[] {
+    return allowedWeapons(this.settings, this.state.get(id)?.kills ?? 0);
   }
 
   private live(id: string) {
@@ -243,7 +248,8 @@ export class GunfightRoom {
       const dt = Math.max(0.05, (t - prev.t) / 1000);
       if (Math.hypot(p.x - prev.x, p.z - prev.z) / dt > GF_RULES.maxSpeed && prev.t > 0) return;
     }
-    const item: GFWeapon = p.item === 'couteau' || isGun(p.item) ? p.item : 'pistolet';
+    const ok = this.allowed(id);
+    const item: GFWeapon = (p.item === 'couteau' || isGun(p.item)) && ok.includes(p.item) ? p.item : ok[0];
     if (prev) {
       const h = this.history.get(id) ?? [];
       h.push({ x: prev.x, y: prev.y, z: prev.z, t: prev.t });
@@ -287,6 +293,7 @@ export class GunfightRoom {
     const W = WEAPONS[weapon];
     const t = this.now();
     const p = this.poses.get(id)!;
+    if (!this.allowed(id).includes(weapon)) throw new GFError('Arme non autorisée dans cette partie.');
     if (p.item !== weapon) throw new GFError('Sortez d’abord cette arme.');
     this.settleReload(s, t);
     if (s.reloadUntil > t && s.reloading === weapon) throw new GFError('Rechargement…');
@@ -368,6 +375,7 @@ export class GunfightRoom {
 
   stab(id: string, target: string): GFShotResult {
     const s = this.live(id);
+    if (!this.allowed(id).includes('couteau')) throw new GFError('Arme non autorisée dans cette partie.');
     if (this.poses.get(id)?.item !== 'couteau') throw new GFError('Sortez d’abord le couteau.');
     const t = this.now();
     if (t < s.nextStabAt) throw new GFError('Trop rapide.');
@@ -394,7 +402,7 @@ export class GunfightRoom {
     this.publishGame();
   }
 
-  private settleReload(s: GFPlayerState, t: number) {
+  private settleReload(s: Omit<GFPlayerState, 'weapons'>, t: number) {
     if (s.reloadUntil && t >= s.reloadUntil) {
       if (s.reloading) s.ammo[s.reloading] = WEAPONS[s.reloading].magazine;
       s.reloadUntil = 0;
@@ -414,8 +422,16 @@ export class GunfightRoom {
     v.deaths++;
     v.respawnAt = t + GF_RULES.respawnSeconds * 1000;
     const k = this.state.get(by)!;
+    const tier = progressionTier(this.settings, k.kills);
     k.kills++;
     if (head) k.headshots++;
+    // progression : palier franchi → l'arme suivante est sortie d'office
+    if (this.settings.arsenal === 'progression' && progressionTier(this.settings, k.kills) > tier) {
+      const w = this.allowed(by)[0];
+      const pose = this.poses.get(by);
+      if (pose) pose.item = w;
+      this.out.event({ text: `Nouvelle arme : ${WEAPON_NAMES[w]}`, kind: 'info', to: by });
+    }
     const team = this.players.get(by)?.team;
     if (this.settings.mode === 'equipes' && team) this.teamScores[team]++;
     this.feed.push({ killer: by, victim, weapon, head, t });
@@ -494,7 +510,7 @@ export class GunfightRoom {
     const t = this.now();
     for (const [pid, s] of this.state) {
       this.settleReload(s, t);
-      players[pid] = { hp: s.hp, alive: s.alive, kills: s.kills, deaths: s.deaths, headshots: s.headshots, ammo: { ...s.ammo }, reloadUntil: s.reloadUntil, reloading: s.reloading, respawnAt: s.respawnAt, spawn: { ...s.spawn }, shieldUntil: s.shieldUntil };
+      players[pid] = { hp: s.hp, alive: s.alive, kills: s.kills, deaths: s.deaths, headshots: s.headshots, weapons: this.allowed(pid), ammo: { ...s.ammo }, reloadUntil: s.reloadUntil, reloading: s.reloading, respawnAt: s.respawnAt, spawn: { ...s.spawn }, shieldUntil: s.shieldUntil };
     }
     const teams: Record<string, Team | null> = {};
     for (const [pid, m] of this.players) teams[pid] = m.team;

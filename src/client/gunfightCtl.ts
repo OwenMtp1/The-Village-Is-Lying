@@ -64,7 +64,10 @@ export class GunfightController {
     this.client = c;
     this.game.attach(c);
     this.key = '';
-    c.onEvent = (e) => this.toasts.push(e.text, e.kind === 'mort' ? 'mort' : 'info');
+    c.onEvent = (e) => {
+      if (e.to && e.to !== c.me) return;
+      this.toasts.push(e.text, e.kind === 'mort' ? 'mort' : 'info');
+    };
     this.off = c.subscribe(() => this.render());
     this.render();
   }

@@ -124,3 +124,58 @@ function drawUnder(): HTMLCanvasElement {
   }
   return cv;
 }
+
+/**
+ * Aperçu d'une carte pour le choix à la création d'une salle : le plan (parchemin ou galeries) cadré sur la zone
+ * jouable, le dehors assombri, la limite en pointillés et les points d'apparition.
+ */
+export function mapPreview(map: GFMap, W = 200, H = 120): HTMLCanvasElement {
+  const cv = document.createElement('canvas');
+  cv.width = W;
+  cv.height = H;
+  const g = cv.getContext('2d')!;
+  const pts = map.zone ?? map.spawns.map((p) => [p.x, p.z] as [number, number]);
+  const xs = pts.map((p) => p[0]);
+  const zs = pts.map((p) => p[1]);
+  const pad = map.zone ? 6 : 14;
+  const [x0, x1, z0, z1] = [Math.min(...xs) - pad, Math.max(...xs) + pad, Math.min(...zs) - pad, Math.max(...zs) + pad];
+  const k = Math.min(W / (x1 - x0), H / (z1 - z0));
+  g.fillStyle = map.underground ? '#1d1712' : '#d9c595';
+  g.fillRect(0, 0, W, H);
+  g.save();
+  g.translate(W / 2, H / 2);
+  g.scale(k, k);
+  g.translate(-(x0 + x1) / 2, -(z0 + z1) / 2);
+  if (map.underground) {
+    const u = (underCache ??= drawUnder());
+    g.drawImage(u, -130, -130, 260, 260);
+  } else {
+    const b = villageBase();
+    g.drawImage(b.canvas, b.center[0] - b.half, b.center[1] - b.half, b.half * 2, b.half * 2);
+  }
+  if (map.zone) {
+    g.beginPath();
+    g.rect(x0 - 500, z0 - 500, x1 - x0 + 1000, z1 - z0 + 1000);
+    map.zone.forEach(([x, z], i) => (i ? g.lineTo(x, z) : g.moveTo(x, z)));
+    g.closePath();
+    g.fillStyle = 'rgba(30, 15, 5, 0.55)';
+    g.fill('evenodd');
+    g.setLineDash([4 / k, 3 / k]);
+    g.lineWidth = 1.6 / k;
+    g.strokeStyle = '#9b2a18';
+    g.beginPath();
+    map.zone.forEach(([x, z], i) => (i ? g.lineTo(x, z) : g.moveTo(x, z)));
+    g.closePath();
+    g.stroke();
+  }
+  g.setLineDash([]);
+  for (const p of map.spawns) {
+    g.beginPath();
+    g.arc(p.x, p.z, 1.8 / k, 0, Math.PI * 2);
+    g.fillStyle = '#2f7de0';
+    g.fill();
+  }
+  g.restore();
+  return cv;
+}
+let underCache: HTMLCanvasElement | null = null;

@@ -2,7 +2,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { GunfightRoom, type GFOutput } from '../src/shared/gunfightRoom';
-import { GF_RULES, WEAPONS, cleanSettings, damageAt, normalize, rayHitBody, type GFGun, type GFShot } from '../src/shared/gunfight';
+import { GF_RULES, PROGRESSION, WEAPONS, allowedWeapons, cleanSettings, damageAt, progressionStep, normalize, rayHitBody, type GFGun, type GFShot } from '../src/shared/gunfight';
 import type { PlayerPose } from '../src/shared/protocol';
 import { GF_MAPS, insideMap, mapOf } from '../src/shared/gunfightMaps';
 
@@ -51,7 +51,7 @@ function fire(room: GunfightRoom, a: string, b: string | null, weapon: GFGun = '
 }
 
 test('réglages bornés ; au moins 2 joueurs ; on ne rejoint pas une partie commencée', () => {
-  assert.deepEqual(cleanSettings({ maxPlayers: 99, scoreLimit: 1, minutes: 0, mode: 'x' as never }), { mode: 'ffa', map: 'village', maxPlayers: 16, scoreLimit: 5, minutes: 2 });
+  assert.deepEqual(cleanSettings({ maxPlayers: 99, scoreLimit: 1, minutes: 0, mode: 'x' as never }), { mode: 'ffa', arsenal: 'libre', weapons: ['pistolet', 'fusil', 'pompe', 'precision', 'couteau'], map: 'village', maxPlayers: 16, scoreLimit: 5, minutes: 2 });
   const { room, ids } = setup({ maxPlayers: 4 }, 1);
   assert.throws(() => room.start(ids[0]), /au moins 2/);
   room.join('B', 'F');
@@ -270,7 +270,8 @@ test('dégâts selon la distance : pleins de près, réduits au loin ; le fusil 
   assert.equal(damageAt(WEAPONS.pistolet, 10, false), WEAPONS.pistolet.damage);
   assert.ok(damageAt(WEAPONS.pistolet, 50, false) < WEAPONS.pistolet.damage * 0.7);
   assert.ok(damageAt(WEAPONS.precision, 200, true) >= GF_RULES.health, 'tête au fusil de précision : mort à toute distance');
-  assert.ok(damageAt(WEAPONS.precision, 30, false) < GF_RULES.health, 'au corps : il en faut deux');
+  assert.ok(damageAt(WEAPONS.precision, 300, false) >= GF_RULES.health, 'au corps aussi, même de très loin');
+  assert.ok(WEAPONS.precision.range >= 400);
 });
 
 test('cartes : points d’apparition dans la carte, réapparition sur la carte choisie, positions hors carte refusées', () => {
@@ -290,4 +291,57 @@ test('cartes : points d’apparition dans la carte, réapparition sur la carte c
     room.pose(ids[0], pose(200, 200));
     assert.deepEqual([room.posesView()[ids[0]].x, room.posesView()[ids[0]].z], [before.x, before.z]);
   }
+});
+
+test('invincibilité de 2 s à l’apparition', () => {
+  const { room, ids, clock } = setup({ mode: 'ffa' });
+  room.start(ids[0]);
+  const s = room.stateOf(ids[1])!;
+  assert.equal(s.shieldUntil - room.gameView().serverNow, 2000);
+  void clock;
+});
+
+test('armes au choix : seules les armes cochées se sortent et tirent', () => {
+  const s = cleanSettings({ weapons: ['fusil', 'couteau'] });
+  assert.deepEqual(allowedWeapons(s, 0), ['fusil', 'couteau']);
+  assert.deepEqual(cleanSettings({ weapons: [] }).weapons.length, 5, 'jamais aucune arme');
+  const { room, ids, clock } = setup({ mode: 'ffa', weapons: ['fusil'] });
+  room.start(ids[0]);
+  const [a, b] = ids;
+  face(room, clock, a, b, 6, 'pistolet');
+  assert.equal(room.posesView()[a].item, 'fusil', 'pistolet interdit : on garde l’arme permise');
+  clock.advance(GF_RULES.spawnShield);
+  assert.throws(() => fire(room, a, b, 'pistolet'), /non autorisée/);
+  assert.equal(fire(room, a, b, 'fusil').hit, true);
+  room.pose(a, pose(0, 0, 0, 'couteau'));
+  assert.throws(() => room.stab(a, b), /non autorisée/);
+});
+
+test('progression : couteau au départ, arme suivante à chaque palier, jusqu’au fusil de précision', () => {
+  const s = cleanSettings({ arsenal: 'progression', scoreLimit: 10 });
+  const step = progressionStep(s);
+  assert.deepEqual(allowedWeapons(s, 0), ['couteau']);
+  assert.deepEqual(allowedWeapons(s, step), ['pistolet', 'couteau']);
+  assert.deepEqual(allowedWeapons(s, 99)[0], 'precision');
+  assert.equal(PROGRESSION[0], 'couteau');
+  // en partie : le premier palier franchi sort le pistolet et prévient le joueur
+  const { room, out, ids, clock } = setup({ mode: 'ffa', arsenal: 'progression', scoreLimit: 10 });
+  room.start(ids[0]);
+  const [a, b] = ids;
+  assert.equal(room.posesView()[a].item, 'couteau');
+  for (let k = 0; k < step; k++) {
+    clock.advance(GF_RULES.respawnSeconds + 0.1);
+    room.tick();
+    clock.advance(30);
+    room.pose(a, pose(0, 0, 0, 'couteau'));
+    room.pose(b, pose(0, 1.5, 0));
+    clock.advance(GF_RULES.spawnShield);
+    while (room.stateOf(b)!.alive) {
+      clock.advance(1);
+      room.stab(a, b);
+    }
+  }
+  assert.equal(room.stateOf(a)!.kills, step);
+  assert.equal(room.posesView()[a].item, 'pistolet');
+  assert.ok(out.events.some((e) => /Nouvelle arme : Pistolet/.test(e)));
 });

@@ -15,8 +15,13 @@ import { GF_MAP_IDS, type GFMapId } from './gunfightMaps';
 export type GFMode = 'ffa' | 'equipes';
 export type Team = 'rouge' | 'bleu';
 
+export type GFArsenal = 'libre' | 'progression';
+
 export interface GFSettings {
   mode: GFMode;
+  /** armes : au choix parmi `weapons` (libre), ou imposées par le nombre d'éliminations (progression) */
+  arsenal: GFArsenal;
+  weapons: GFWeapon[];
   /** carte (partie du village) */
   map: GFMapId;
   /** places dans la salle */
@@ -61,13 +66,14 @@ export interface GunSpec {
 /**
  * Équilibre : le pistolet tue en 4 balles au corps (2 à la tête de près) ; la carabine en 5 (3 têtes), mais perd
  * de sa force au loin ; le fusil à pompe tue d'une cartouche à bout portant et ne vaut plus rien à 20 m ; le fusil
- * de précision tue d'une balle à la tête à toute distance et laisse 10 PV au corps, lent et imprécis sans lunette.
+ * de précision tue d'une balle (tête ou corps) à toute distance, mais il est lent, n'a que 5 balles et ne touche
+ * rien sans la lunette.
  */
 export const WEAPONS: Record<GFGun, GunSpec> = {
   pistolet: { name: 'Pistolet', damage: 28, head: 2, falloff: [18, 45, 0.6], fireDelay: 0.24, auto: false, magazine: 12, reload: 1.5, range: 60, pellets: 1, spread: 0.02, adsSpread: 0.004, zoom: 0.8, recoil: 0.03 },
   fusil: { name: 'Carabine', damage: 24, head: 1.75, falloff: [30, 80, 0.65], fireDelay: 0.1, auto: true, magazine: 30, reload: 2.3, range: 110, pellets: 1, spread: 0.045, adsSpread: 0.007, zoom: 0.65, recoil: 0.016 },
   pompe: { name: 'Fusil à pompe', damage: 13, head: 1.5, falloff: [7, 22, 0.25], fireDelay: 0.95, auto: false, magazine: 6, reload: 3.0, range: 30, pellets: 9, spread: 0.08, adsSpread: 0.065, zoom: 0.88, recoil: 0.085 },
-  precision: { name: 'Fusil de précision', damage: 90, head: 3, falloff: [400, 400, 1], fireDelay: 1.45, auto: false, magazine: 5, reload: 3.2, range: 260, pellets: 1, spread: 0.11, adsSpread: 0, zoom: 0.22, recoil: 0.11 },
+  precision: { name: 'Fusil de précision', damage: 110, head: 2.5, falloff: [999, 999, 1], fireDelay: 1.45, auto: false, magazine: 5, reload: 3.2, range: 450, pellets: 1, spread: 0.11, adsSpread: 0, zoom: 0.22, recoil: 0.11 },
 };
 
 /** Dégâts d'une balle de cette arme à la distance d (m), au corps ou à la tête. */
@@ -96,12 +102,12 @@ export const GF_RULES = {
   knifeAngle: 1.0,
   respawnSeconds: 3,
   /** protection à la réapparition (s) : ni touché ni tireur */
-  spawnShield: 1.5,
+  spawnShield: 2,
   maxSpeed: 9,
   limits: { players: [2, 16], score: [5, 100], minutes: [2, 30] } as const,
 };
 
-export const GF_DEFAULT: GFSettings = { mode: 'ffa', map: 'village', maxPlayers: 8, scoreLimit: 20, minutes: 8 };
+export const GF_DEFAULT: GFSettings = { mode: 'ffa', arsenal: 'libre', weapons: ['pistolet', 'fusil', 'pompe', 'precision', 'couteau'], map: 'village', maxPlayers: 8, scoreLimit: 20, minutes: 8 };
 
 export const GF_MODE_NAMES: Record<GFMode, string> = { ffa: 'Chacun pour soi', equipes: 'Match à mort par équipe' };
 export const TEAM_NAMES: Record<Team, string> = { rouge: 'Équipe Rouge', bleu: 'Équipe Bleue' };
@@ -112,11 +118,34 @@ export function cleanSettings(s: Partial<GFSettings> | undefined): GFSettings {
   const n = (v: unknown, [a, b]: readonly [number, number], d: number) => (typeof v === 'number' && Number.isFinite(v) ? Math.max(a, Math.min(b, Math.round(v))) : d);
   return {
     mode: s?.mode === 'equipes' ? 'equipes' : 'ffa',
+    arsenal: s?.arsenal === 'progression' ? 'progression' : 'libre',
+    weapons: (() => {
+      const w = SLOTS.filter((x) => Array.isArray(s?.weapons) && s!.weapons.includes(x));
+      return w.length ? w : [...SLOTS];
+    })(),
     map: GF_MAP_IDS.includes(s?.map as GFMapId) ? (s!.map as GFMapId) : GF_DEFAULT.map,
     maxPlayers: n(s?.maxPlayers, L.players, GF_DEFAULT.maxPlayers),
     scoreLimit: n(s?.scoreLimit, L.score, GF_DEFAULT.scoreLimit),
     minutes: n(s?.minutes, L.minutes, GF_DEFAULT.minutes),
   };
+}
+
+export const ARSENAL_NAMES: Record<GFArsenal, string> = { libre: 'Armes au choix', progression: 'Progression' };
+
+/** Progression (« gun game ») : on commence au couteau et chaque palier d'éliminations donne l'arme suivante. */
+export const PROGRESSION: GFWeapon[] = ['couteau', 'pistolet', 'pompe', 'fusil', 'precision'];
+/** éliminations par palier : l'arme finale arrive au dernier cinquième du score visé */
+export const progressionStep = (s: GFSettings) => Math.max(1, Math.round(s.scoreLimit / PROGRESSION.length));
+export const progressionTier = (s: GFSettings, kills: number) => Math.min(PROGRESSION.length - 1, Math.floor(kills / progressionStep(s)));
+
+/** Armes permises à un joueur ; la première est celle qu'il sort à l'apparition. */
+export function allowedWeapons(s: GFSettings, kills: number): GFWeapon[] {
+  if (s.arsenal === 'progression') {
+    const w = PROGRESSION[progressionTier(s, kills)];
+    return w === 'couteau' ? ['couteau'] : [w, 'couteau'];
+  }
+  const guns = s.weapons.filter((w) => w !== 'couteau');
+  return guns.length ? [...guns, ...(s.weapons.includes('couteau') ? (['couteau'] as GFWeapon[]) : [])] : ['couteau'];
 }
 
 // ───────────────────────── vues échangées ─────────────────────────
@@ -151,6 +180,8 @@ export interface GFPlayerState {
   reloadUntil: number;
   reloading: GFGun | null;
   headshots: number;
+  /** armes permises (la première : celle de l'apparition) */
+  weapons: GFWeapon[];
   /** réapparition prévue (horodatage serveur) */
   respawnAt: number;
   /** dernière apparition : position et numéro (le client se place quand le numéro change) */

@@ -37,7 +37,7 @@ interface Remote {
 
 interface Bot {
   ch: Character;
-  weapon: GFGun;
+  weapon: GFWeapon;
   /** lacet de la visée (amorti) */
   aim: number;
   tag: THREE.Sprite;
@@ -172,7 +172,7 @@ export class GunfightGame {
           ch.root.add(tag);
           tag.position.y = ch.height + 0.35;
           this.scene.add(ch.root);
-          this.bots.set(id, { ch, weapon: botWeapon(), aim: sp.yaw, tag, spawnN: sp.n - 1, target: null, waypoint: this.randomSpawn(), stuck: 0, nextShot: 0, strafe: Math.random() * 6, fall: 0, thinkAt: 0 });
+          this.bots.set(id, { ch, weapon: botWeapon(g.players[id]?.weapons ?? ['pistolet']), aim: sp.yaw, tag, spawnN: sp.n - 1, target: null, waypoint: this.randomSpawn(), stuck: 0, nextShot: 0, strafe: Math.random() * 6, fall: 0, thinkAt: 0 });
         } else {
           const anim = new CharacterAnimator(bases[i]);
           const y = world.groundAt(sp.x, sp.z, sp.y !== null && sp.y !== undefined ? sp.y + 1 : 1e6);
@@ -312,7 +312,7 @@ export class GunfightGame {
       this.cam.yaw = me.spawn.yaw;
       p.root.rotation.x = 0;
       this.fallMe = 0;
-      this.item = 'pistolet';
+      this.item = me.weapons[0] ?? 'pistolet';
     }
     const alive = !!me?.alive;
     const frozen = !playing || this.paused || !alive;
@@ -320,10 +320,13 @@ export class GunfightGame {
     if (!this.paused) this.cam.look(m.dx, m.dy, 0);
     if (!this.paused && this.input.consume('KeyV')) this.cam.toggle(p);
     // armes : touches 1 à 5, molette pour passer à la suivante / précédente
-    SLOTS.forEach((w, i) => !frozen && this.input.consume(`Digit${i + 1}`) && this.switchTo(w));
-    if (!frozen && Math.abs(m.wheel) > 20) {
-      const i = SLOTS.indexOf(this.item);
-      this.switchTo(SLOTS[(i + (m.wheel > 0 ? 1 : -1) + SLOTS.length) % SLOTS.length]);
+    // seules les armes permises (réglages de la salle, palier de progression) se sortent
+    const allowed = me?.weapons ?? SLOTS;
+    if (alive && !allowed.includes(this.item)) this.switchTo(allowed[0]);
+    SLOTS.forEach((w, i) => !frozen && this.input.consume(`Digit${i + 1}`) && allowed.includes(w) && this.switchTo(w));
+    if (!frozen && Math.abs(m.wheel) > 20 && allowed.length > 1) {
+      const i = Math.max(0, allowed.indexOf(this.item));
+      this.switchTo(allowed[(i + (m.wheel > 0 ? 1 : -1) + allowed.length) % allowed.length]);
     }
     if (!frozen && this.input.consume('KeyR')) this.reload();
     const gun = isGun(this.item) ? this.item : null;
@@ -629,7 +632,7 @@ export class GunfightGame {
         b.fall = 0;
         b.target = null;
         b.thinkAt = now + reaction;
-        b.weapon = botWeapon();
+        b.weapon = botWeapon(st.weapons);
       }
       if (!st.alive) {
         b.fall = Math.min(1, b.fall + dt / 0.6);
@@ -638,7 +641,10 @@ export class GunfightGame {
         continue;
       }
       b.tag.visible = true;
-      const W = WEAPONS[b.weapon];
+      // armes permises (réglages, palier de progression) : il change d'arme si la sienne ne l'est plus
+      if (!st.weapons.includes(b.weapon)) b.weapon = botWeapon(st.weapons);
+      const gun = isGun(b.weapon) ? b.weapon : null;
+      const W = gun ? WEAPONS[gun] : null;
       const [near, far] = BOT_RANGE[b.weapon];
       const pos = ch.root.position;
       const chest = (v: THREE.Vector3) => [v.x, v.y + 1.3, v.z] as const;
@@ -651,7 +657,7 @@ export class GunfightGame {
           const enemy = g.settings.mode === 'ffa' || g.teams[oid] !== g.teams[id];
           if (!enemy) continue;
           const d = pos.distanceTo(op);
-          if (d > Math.min(W.range, 70)) continue;
+          if (d > Math.min(W?.range ?? 40, 70)) continue;
           if (!world.lineClear(...chest(pos), ...chest(op))) continue;
           if (!best || d < best.d) best = { id: oid, d };
         }
@@ -678,10 +684,22 @@ export class GunfightGame {
           cmd.x /= ln;
           cmd.z /= ln;
         }
-        if (st.reloadUntil) {
+        if (!gun || !W) {
+          // couteau : il fonce droit sur sa cible et frappe au contact
+          cmd = { x: dx / d, z: dz / d, run: d > 3, jump: false };
+          if (d < GF_RULES.knifeRange - 0.4 && now >= b.nextShot) {
+            b.nextShot = now + GF_RULES.knifeDelay * slow;
+            ch.animator.strike();
+            try {
+              c.room.stab(id, b.target!);
+            } catch {
+              /* trop tôt : il recommencera */
+            }
+          }
+        } else if (st.reloadUntil) {
           // à couvert pendant le rechargement : il recule
           cmd = { x: -dx / d, z: -dz / d, run: true, jump: false };
-        } else if (st.ammo[b.weapon] <= 0) c.room.reload(id, b.weapon);
+        } else if (st.ammo[gun] <= 0) c.room.reload(id, gun);
         else if (now >= b.nextShot && Math.abs(wrap(look - ch.yaw)) < 0.25) {
           b.nextShot = now + Math.max(W.fireDelay, 0.25) * slow * (0.8 + Math.random() * 0.5) + (W.auto ? 0 : 0.2);
           fire = true;
@@ -696,11 +714,11 @@ export class GunfightGame {
           b.waypoint = this.randomSpawn();
           b.stuck = 0;
         } else cmd = { x: dx / d, z: dz / d, run: d > 12, jump: ch.controller.blocked && Math.random() < 0.02 };
-        if (st.ammo[b.weapon] < W.magazine && !st.reloadUntil) c.room.reload(id, b.weapon);
+        if (gun && W && st.ammo[gun] < W.magazine && !st.reloadUntil) c.room.reload(id, gun);
       }
       // face à sa cible, il se déplace de côté sans lui tourner le dos ; sinon il regarde où il va
       if (look !== null) b.aim = wrap(b.aim + wrap(look - b.aim) * Math.min(1, dt * 8));
-      ch.aimYaw = look !== null ? b.aim : null;
+      ch.aimYaw = look !== null && gun ? b.aim : null;
       ch.update(dt, cmd, look);
       if (look === null) b.aim = ch.yaw;
       if (this.confine(ch)) b.stuck += dt * 3;
@@ -710,7 +728,7 @@ export class GunfightGame {
       ch.animator.reloading = this.reloadProgress(id, b.weapon);
       const k = ch.controller;
       c.room.pose(id, { x: k.x, y: k.y, z: k.z, yaw: ch.yaw, speed: Math.hypot(k.realVx, k.realVz), grounded: k.grounded, vy: k.vy, dir: 1, torch: false, pitch, item: b.weapon });
-      if (fire && tp && b.target) {
+      if (fire && tp && b.target && gun && W) {
         // visée : poitrine ou tête, avec une erreur selon la difficulté ; plombs dispersés au fusil à pompe
         const eye = new THREE.Vector3(k.x, k.y + 1.5, k.z);
         const h = this.bodyHeight(b.target);
@@ -725,7 +743,7 @@ export class GunfightGame {
           dirs.push([d.x, d.y, d.z]);
         }
         try {
-          c.room.shoot(id, b.weapon, [eye.x, eye.y, eye.z], dirs, []);
+          c.room.shoot(id, gun, [eye.x, eye.y, eye.z], dirs, []);
         } catch {
           /* cadence, rechargement : il réessaiera */
         }
@@ -741,9 +759,14 @@ export class GunfightGame {
 }
 
 /** Distance de combat préférée des robots selon leur arme (m). */
-const BOT_RANGE: Record<GFGun, [number, number]> = { pistolet: [6, 15], fusil: [9, 22], pompe: [2, 7], precision: [22, 45] };
-function botWeapon(): GFGun {
-  const r = Math.random();
-  return r < 0.38 ? 'fusil' : r < 0.63 ? 'pistolet' : r < 0.83 ? 'pompe' : 'precision';
+const BOT_RANGE: Record<GFWeapon, [number, number]> = { pistolet: [6, 15], fusil: [9, 22], pompe: [2, 7], precision: [22, 45], couteau: [0, 1] };
+/** Arme d'un robot, tirée au hasard parmi celles permises (les armes à feu d'abord). */
+function botWeapon(allowed: GFWeapon[]): GFWeapon {
+  const guns = allowed.filter(isGun);
+  if (!guns.length) return 'couteau';
+  const weight: Record<GFGun, number> = { fusil: 0.38, pistolet: 0.25, pompe: 0.2, precision: 0.17 };
+  let r = Math.random() * guns.reduce((a, g) => a + weight[g], 0);
+  for (const g of guns) if ((r -= weight[g]) <= 0) return g;
+  return guns[0];
 }
 const gauss = () => (Math.random() + Math.random() + Math.random() - 1.5) / 0.75;

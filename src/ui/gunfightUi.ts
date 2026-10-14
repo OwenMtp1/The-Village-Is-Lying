@@ -5,12 +5,12 @@
  * marqueur de touche et de tir à la tête, lunette, écran de mort, tableau des scores sur Tab) et résultats.
  */
 import type { Sex } from '../characters/catalog';
-import { GF_DEFAULT, GF_MODE_NAMES, GF_RULES, SLOTS, TEAM_NAMES, WEAPONS, WEAPON_NAMES, isGun, type GFWeapon, type GFGameView, type GFLobbyView, type GFMode, type GFSettings, type Team } from '../shared/gunfight';
+import { ARSENAL_NAMES, GF_DEFAULT, GF_MODE_NAMES, GF_RULES, PROGRESSION, SLOTS, progressionStep, progressionTier, type GFArsenal, TEAM_NAMES, WEAPONS, WEAPON_NAMES, isGun, type GFWeapon, type GFGameView, type GFLobbyView, type GFMode, type GFSettings, type Team } from '../shared/gunfight';
 import { STATIC, OFFLINE_MESSAGE } from '../client/net';
 import { sfx } from '../audio/sfx';
 import { esc, h, onClick } from './dom';
 import { ICON } from './icons';
-import { GFMinimap } from './gfMinimap';
+import { GFMinimap, mapPreview } from './gfMinimap';
 import { GF_MAPS, mapOf, type GFMapId } from '../shared/gunfightMaps';
 import { profile } from './profile';
 
@@ -49,7 +49,14 @@ export class GFSettingsForm {
         <button type="button" data-mode="equipes">${GF_MODE_NAMES.equipes}</button>
       </div>
       <div class="gf-maps" role="radiogroup" aria-label="Carte">
-        ${GF_MAPS.map((m) => `<button type="button" class="gf-map" data-map="${m.id}" title="${esc(m.desc)}"><b>${esc(m.name)}</b><small>${esc(m.desc)}</small><em>${esc(m.size)} joueurs</em></button>`).join('')}
+        ${GF_MAPS.map((m) => `<button type="button" class="gf-map" data-map="${m.id}" title="${esc(m.desc)}"><span class="gf-prev"></span><b>${esc(m.name)}</b><small>${esc(m.desc)}</small><em>${esc(m.size)} joueurs</em></button>`).join('')}
+      </div>
+      <div class="seg gf-arsenal" role="radiogroup" aria-label="Armes">
+        ${(['libre', 'progression'] as GFArsenal[]).map((a) => `<button type="button" data-arsenal="${a}">${ARSENAL_NAMES[a]}</button>`).join('')}
+      </div>
+      <p class="gf-arsenal-help"></p>
+      <div class="gf-weps" role="group" aria-label="Armes autorisées">
+        ${SLOTS.map((w) => `<button type="button" class="gf-wep" data-wep="${w}">${WEAPON_ICON[w]}<span>${esc(WEAPON_NAMES[w])}</span></button>`).join('')}
       </div>
       ${opts.players === false ? '' : stepper('maxPlayers', 'Joueurs (places)', initial.maxPlayers, L.players[0], L.players[1])}
       ${stepper('scoreLimit', 'Éliminations pour gagner', initial.scoreLimit, L.score[0], L.score[1])}
@@ -60,6 +67,13 @@ export class GFSettingsForm {
       sfx.click();
       if (b.dataset.mode) this.value = { ...this.value, mode: b.dataset.mode as GFMode };
       if (b.dataset.map) this.value = { ...this.value, map: b.dataset.map as GFMapId };
+      if (b.dataset.arsenal) this.value = { ...this.value, arsenal: b.dataset.arsenal as GFArsenal };
+      if (b.dataset.wep) {
+        const w = b.dataset.wep as GFWeapon;
+        const on = this.value.weapons.includes(w);
+        // au moins une arme reste permise
+        if (!(on && this.value.weapons.length === 1)) this.value = { ...this.value, weapons: SLOTS.filter((x) => (x === w ? !on : this.value.weapons.includes(x))) };
+      }
       if (b.dataset.d) {
         const row = b.closest('.gf-step') as HTMLElement;
         const k = row.dataset.k as 'maxPlayers' | 'scoreLimit' | 'minutes';
@@ -83,7 +97,18 @@ export class GFSettingsForm {
   }
   private render() {
     for (const b of this.el.querySelectorAll<HTMLElement>('[data-mode]')) b.classList.toggle('on', b.dataset.mode === this.value.mode);
-    for (const b of this.el.querySelectorAll<HTMLElement>('[data-map]')) b.classList.toggle('on', b.dataset.map === this.value.map);
+    for (const b of this.el.querySelectorAll<HTMLElement>('[data-map]')) {
+      b.classList.toggle('on', b.dataset.map === this.value.map);
+      const slot = b.querySelector('.gf-prev')!;
+      if (!slot.firstChild) slot.append(mapPreview(mapOf(b.dataset.map)));
+    }
+    for (const b of this.el.querySelectorAll<HTMLElement>('[data-arsenal]')) b.classList.toggle('on', b.dataset.arsenal === this.value.arsenal);
+    const libre = this.value.arsenal === 'libre';
+    (this.el.querySelector('.gf-weps') as HTMLElement).hidden = !libre;
+    for (const b of this.el.querySelectorAll<HTMLElement>('[data-wep]')) b.classList.toggle('on', this.value.weapons.includes(b.dataset.wep as GFWeapon));
+    this.el.querySelector('.gf-arsenal-help')!.textContent = libre
+      ? 'Armes autorisées (cliquez pour en retirer ou en remettre) :'
+      : `Tout le monde commence au couteau ; toutes les ${progressionStep(this.value)} éliminations, l’arme suivante : ${PROGRESSION.map((w) => WEAPON_NAMES[w]).join(' → ')}.`;
     for (const row of this.el.querySelectorAll<HTMLElement>('.gf-step')) {
       const k = row.dataset.k as 'maxPlayers' | 'scoreLimit' | 'minutes';
       row.querySelector('output')!.textContent = `${this.value[k]}${k === 'minutes' ? ' min' : ''}`;
@@ -101,7 +126,7 @@ export function gunfightMenuScreen(hooks: GFMenuHooks, status: (text: string, ba
   const el = h(`<section class="mm-screen mm-panel" data-screen="gunfight" aria-label="Gunfight">
     <header><button type="button" class="back" aria-label="Retour au menu">←</button><h2>Gunfight</h2></header>
     <div class="mm-body">
-      <p class="sub">Tout le monde apparaît armé : pistolet (8 balles, <kbd>R</kbd> pour recharger) et couteau (<kbd>2</kbd>). Chaque élimination rapporte un point ; on réapparaît au bout de 3 s.</p>
+      <p class="sub">Pistolet, carabine, fusil à pompe, fusil de précision et couteau (<kbd>1</kbd> à <kbd>5</kbd>), ou progression du couteau au fusil de précision. Chaque élimination rapporte un point ; on réapparaît au bout de 3 s, invincible 2 s.</p>
       <div class="slot-profile"></div>
       <div class="tabs" role="tablist">
         <button type="button" role="tab" data-gtab="creer" class="on">Créer une salle</button>
@@ -299,6 +324,7 @@ export class GFHud {
       <div class="gf-cross" aria-hidden="true"><span class="l"></span><span class="r"></span><span class="t"></span><span class="b"></span><i></i></div>
       <div class="gf-headshot" aria-hidden="true">Tête !</div>
       <div class="gf-out" role="status">Limite de la carte</div>
+      <div class="gf-shield" role="status"></div>
       <div class="gf-dmg" aria-hidden="true"></div>
       <div class="gf-health"><span class="gf-hp-n"></span><div class="gf-hp"><i></i></div></div>
       <div class="gf-ammo"></div>
@@ -395,10 +421,31 @@ export class GFHud {
       const busy = reloading && st?.reloading === item;
       ammo.innerHTML = `${ICON.balle}<span><b>${busy ? '…' : n}</b> / ${WEAPONS[item].magazine}</span><small>${busy ? 'Rechargement' : n === 0 ? 'R : recharger' : esc(WEAPONS[item].name)}</small>`;
     }
-    this.el.querySelector('.gf-slots')!.innerHTML = SLOTS.map(
-      (w, i) =>
-        `<li class="${w === item ? 'on' : ''}${isGun(w) && st && st.ammo[w] === 0 ? ' empty' : ''}"><kbd>${i + 1}</kbd>${WEAPON_ICON[w]}<span>${esc(WEAPON_NAMES[w])}</span>${isGun(w) ? `<small>${st?.ammo[w] ?? 0}</small>` : ''}</li>`,
-    ).join('');
+    const allowed = st?.weapons ?? SLOTS;
+    // progression : palier atteint et éliminations avant l'arme suivante
+    const prog =
+      G.settings.arsenal === 'progression' && st
+        ? (() => {
+            const tier = progressionTier(G.settings, st.kills);
+            const step = progressionStep(G.settings);
+            const next = tier < PROGRESSION.length - 1 ? `${WEAPON_NAMES[PROGRESSION[tier + 1]]} dans ${step - (st.kills % step)} élim.` : 'Arme finale';
+            return `<li class="gf-prog">Progression ${tier + 1} / ${PROGRESSION.length} · ${esc(next)}</li>`;
+          })()
+        : '';
+    const slotsHtml =
+      prog +
+      SLOTS.map((w, i) =>
+        allowed.includes(w)
+          ? `<li class="${w === item ? 'on' : ''}${isGun(w) && st && st.ammo[w] === 0 ? ' empty' : ''}"><kbd>${i + 1}</kbd>${WEAPON_ICON[w]}<span>${esc(WEAPON_NAMES[w])}</span>${isGun(w) ? `<small>${st?.ammo[w] ?? 0}</small>` : ''}</li>`
+          : '',
+      ).join('');
+    const slots = this.el.querySelector('.gf-slots')!;
+    if (slots.innerHTML !== slotsHtml) slots.innerHTML = slotsHtml;
+    // invincibilité à l'apparition
+    const shield = this.el.querySelector('.gf-shield') as HTMLElement;
+    const sh = st?.alive ? Math.max(0, (st.shieldUntil - now) / 1000) : 0;
+    shield.classList.toggle('on', sh > 0);
+    if (sh > 0) shield.textContent = `Protégé ${sh.toFixed(1)} s`;
     // viseur : s'ouvre avec la dispersion ; lunette du fusil de précision
     const cross = this.el.querySelector('.gf-cross') as HTMLElement;
     cross.style.setProperty('--gap', `${Math.round(Math.min(80, Math.max(3, spreadPx)))}px`);
@@ -460,7 +507,14 @@ export class GFResults {
     (won ? sfx.victory : sfx.defeat)();
     const title = r.winner === null ? 'Égalité' : r.winner === 'rouge' || r.winner === 'bleu' ? `${TEAM_NAMES[r.winner as Team]} gagne` : `${esc(name(r.winner))} gagne`;
     this.el.className = `results gf-results open ${won ? 'w-innocents' : 'w-tueurs'}`;
-    this.el.innerHTML = `<div class="res-box">
+    // d'abord la bannière « Partie terminée » puis « Victoire / Défaite », ensuite les scores
+    const verdict = won === null ? 'Égalité' : won ? 'Victoire !' : 'Défaite';
+    this.el.innerHTML = `<div class="gf-end ${won === null ? 'nul' : won ? 'win' : 'lose'}" aria-live="assertive">
+      <span class="gf-end-k">Partie terminée</span>
+      <strong>${verdict}</strong>
+      <span class="gf-end-s">${won === null ? 'Personne ne l’emporte' : won ? 'Vous avez gagné' : 'Vous avez perdu'}</span>
+    </div>
+    <div class="res-box gf-res-late">
       <div class="mm-kicker">${won === null ? 'Fin de la partie' : won ? 'Victoire' : 'Défaite'}</div>
       <h2>${title}</h2>
       <p class="res-reason">${esc(r.reason)}</p>

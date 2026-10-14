@@ -98,10 +98,16 @@ point, on réapparaît au bout de 3 s loin des adversaires (1,5 s de protection)
 | `1` Pistolet | 28 (4 balles) | ×2 | dès 18 m, −40 % à 45 m | coup par coup | 12 | 1,5 s | 60 m |
 | `2` Carabine | 24 (5 balles) | ×1,75 | dès 30 m, −35 % à 80 m | rafale (bouton maintenu) | 30 | 2,3 s | 110 m |
 | `3` Fusil à pompe | 9 plombs × 13 (mort à bout portant) | ×1,5 | dès 7 m, −75 % à 22 m | lente, pompe | 6 | 3 s | 30 m |
-| `4` Fusil de précision | 90 | ×3 (mort) | aucune | très lente, culasse | 5 | 3,2 s | 260 m |
+| `4` Fusil de précision | 110 (mort d'une balle) | ×2,5 | aucune | très lente, culasse | 5 | 3,2 s | 450 m |
 | `5` Couteau | 60 | — | — | — | — | — | 2,3 m |
 
-**Cartes** (au choix à la création de la salle ou en solo) : *Le Village* (tout), *Les Souterrains* (galeries et
+**Armes de la partie** (à la création) : *Armes au choix* (on coche celles qui sont permises) ou *Progression* :
+tout le monde commence au couteau, puis pistolet, fusil à pompe, carabine et fusil de précision, un palier tous
+les cinquièmes du score visé (le serveur refuse toute autre arme). 2 s d'invincibilité à chaque apparition
+(« Protégé »), perdue dès qu'on tire. Fin de partie : bannière « Partie terminée — Victoire ! / Défaite » avant
+le tableau des scores.
+
+**Cartes** (au choix, avec aperçu du plan à la création de la salle ou en solo) : *Le Village* (tout), *Les Souterrains* (galeries et
 salles à 8 m sous terre), *Le Quartier des Tisserands* (rues serrées entre les maisons), *La Place du Marché*
 (petite arène), *L'Église et le Cimetière*, *La Ferme des Brumes* (grange, écuries, champs : longues distances),
 *La Forêt de la Lisière* (sous-bois). Chacune a ses points d'apparition et une limite invisible (« Limite de la
