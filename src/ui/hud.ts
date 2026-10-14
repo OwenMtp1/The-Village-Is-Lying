@@ -33,7 +33,7 @@ export class OnlineHud {
       <button type="button" class="hud-btn journal-btn" title="Journal d'enquête (J)">${ICON.livre}<span>Journal</span><kbd>J</kbd></button>
       <div class="prompts" aria-live="polite"></div>
       <div class="controls-help">
-        <span><kbd>Z Q S D</kbd> marcher</span><span><kbd>Maj</kbd> courir</span><span><kbd>Espace</kbd> sauter</span><span><kbd>V</kbd> vue subjective</span><span><kbd>L</kbd> lampe</span><span><kbd>2</kbd> arme</span><span><kbd>J</kbd> journal</span><span><kbd>Échap</kbd> menu</span>
+        <span><kbd>Z Q S D</kbd> marcher</span><span><kbd>Maj</kbd> courir</span><span><kbd>Espace</kbd> sauter</span><span><kbd>V</kbd> vue subjective</span><span><kbd>L</kbd> lampe</span><span><kbd>2</kbd> arme</span><span><kbd>J</kbd> journal</span><span><kbd>M</kbd> carte</span><span><kbd>Échap</kbd> menu</span>
       </div>
       <section class="journal" aria-label="Journal d'enquête" hidden></section>
       <section class="meeting" role="dialog" aria-label="Réunion du village"></section>

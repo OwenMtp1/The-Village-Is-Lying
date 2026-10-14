@@ -1,0 +1,40 @@
+/** Carte dans chaque mode : exploration solo (touche M, Échap) et exploration libre (M, clic → caméra déplacée). */
+import { writeFileSync } from 'node:fs';
+import { chromium } from 'playwright-core';
+const BASE = process.env.BASE ?? 'http://localhost:3001';
+const browser = await chromium.launch({ executablePath: '/opt/pw-browsers/chromium-1194/chrome-linux/chrome', args: ['--use-angle=swiftshader', '--enable-unsafe-swiftshader'] });
+const page = await browser.newPage({ viewport: { width: 1280, height: 800 } });
+const errors: string[] = [];
+page.on('pageerror', (e) => errors.push(e.message));
+await page.goto(BASE);
+await page.waitForFunction(() => (window as any).__village, null, { timeout: 240_000 });
+const ev = <T = unknown>(c: string) => page.evaluate(c) as Promise<T>;
+await ev(`window.__village.settings.set({ quality: 'basse' })`);
+await page.waitForTimeout(2500);
+const open = () => ev<boolean>(`document.querySelector('.pause').classList.contains('open')`);
+// exploration libre
+await ev(`document.querySelector('.inspect').click()`);
+await page.waitForTimeout(800);
+await page.keyboard.press('KeyM');
+await page.waitForTimeout(1200);
+console.log('exploration libre, M → carte :', await open(), '|', await ev(`document.querySelector('.pause-title h2').textContent`));
+const pt = await ev<{ x: number; y: number }>(`(() => { const m = window.__village.gameUi.pause.map; const [sx, sy] = m.toScreen(68, -9); const r = m.canvas.getBoundingClientRect(); const d = m.canvas.width / r.width; return { x: r.left + sx / d, y: r.top + sy / d }; })()`);
+await page.mouse.click(pt.x, pt.y);
+await page.waitForTimeout(800);
+console.log('clic sur la forge → carte fermée :', !(await open()), '| caméra :', await ev(`window.__village.view.placeName()`), await ev(`window.__village.view.camera.position.toArray().map(n => n.toFixed(1)).join(', ')`));
+writeFileSync('screenshots/ui/22-exploration-libre-forge.png', await page.screenshot());
+// retour au menu, exploration solo
+await ev(`window.__village.gameUi.backToMenu()`);
+await ev(`document.querySelector('[data-go="jouer"]').click(); document.querySelector('[data-tab="solo"]').click(); document.querySelector('.solo').click()`);
+await page.waitForFunction(`window.__village.mode() === 'solo'`, null, { timeout: 120_000 });
+await page.keyboard.press('KeyM');
+await page.waitForTimeout(1200);
+console.log('solo, M → carte :', await open());
+await page.keyboard.press('KeyM');
+await page.waitForTimeout(500);
+console.log('solo, M à nouveau → fermée :', !(await open()));
+await page.keyboard.press('Escape');
+await page.waitForTimeout(800);
+console.log('solo, Échap (souris libre) → carte :', await open());
+console.log(errors.length ? `erreurs : ${errors.join(' | ')}` : 'aucune erreur de page');
+await browser.close();

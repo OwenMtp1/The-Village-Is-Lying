@@ -76,7 +76,7 @@ export class GameUi {
     };
     this.pause.onResume = () => this.setPause(false);
     this.pause.onTeleport = (p) => {
-      if (hooks.mode() !== 'solo') return;
+      if (hooks.mode() !== 'solo' && hooks.mode() !== 'inspection') return;
       hooks.teleport(p.x, p.z, p.underground, p.name);
       this.toast(`Vous voici : ${p.name}.`, 'ok');
       this.setPause(false);
@@ -90,6 +90,7 @@ export class GameUi {
     net.subscribe(() => this.render());
     net.onEvent = (e) => this.onEvent(e);
     window.addEventListener('keydown', (e) => this.onKey(e));
+    document.addEventListener('pointerlockchange', () => this.onLockChange());
     net.connect();
   }
 
@@ -118,19 +119,37 @@ export class GameUi {
   private onKey(e: KeyboardEvent) {
     if ((e.target as HTMLElement)?.tagName === 'INPUT') return;
     const mode = this.hooks.mode();
-    const inGame = mode === 'solo' || mode === 'online';
-    if (e.code === 'Escape' && inGame && !this.pause.open && !this.results.open && !document.pointerLockElement) {
+    const withMap = mode === 'solo' || mode === 'online' || mode === 'inspection';
+    if ((e.code === 'Escape' || e.code === 'KeyM') && withMap && !this.pause.open && !this.results.open && !document.pointerLockElement) {
+      if (e.code === 'KeyM') this.pause.setTab('carte');
       this.setPause(true);
       e.preventDefault();
-    } else if (e.code === 'KeyJ' && mode === 'online' && !this.pause.open) this.hud.toggleJournal();
+    } else if (e.code === 'KeyM' && this.pause.open) this.setPause(false);
+    else if (e.code === 'KeyJ' && mode === 'online' && !this.pause.open) this.hud.toggleJournal();
+  }
+
+  /**
+   * Échap avec la souris capturée : le navigateur libère la souris et garde la touche pour lui. On ouvre
+   * donc l'écran de pause dès que la capture est perdue sans que le jeu l'ait demandé (une seule pression).
+   */
+  private selfUnlockAt = 0;
+  private releasePointer() {
+    this.selfUnlockAt = performance.now();
+    document.exitPointerLock?.();
+  }
+  private onLockChange() {
+    const mode = this.hooks.mode();
+    if (document.pointerLockElement || this.pause.open || this.results.open) return;
+    if (performance.now() - this.selfUnlockAt < 400) return;
+    if ((mode === 'solo' || mode === 'online') && net.game?.phase !== 'reunion') this.setPause(true);
   }
 
   setPause(on: boolean) {
     if (on === this.pause.open) return;
-    if (on) document.exitPointerLock?.();
+    if (on) this.releasePointer();
     const online = this.hooks.mode() === 'online';
     if (on) this.refreshPauseSide();
-    this.pause.show(on, online, { player: this.hooks.playerPose(), teleport: this.hooks.mode() === 'solo' });
+    this.pause.show(on, online, { player: this.hooks.playerPose(), teleport: this.hooks.mode() === 'solo' || this.hooks.mode() === 'inspection', inspection: this.hooks.mode() === 'inspection' });
     this.hooks.setPaused(on);
   }
 
@@ -164,13 +183,13 @@ export class GameUi {
     if (G?.result && this.results.shown !== G.startedAt) {
       const snap = snapshotResult(G);
       if (snap) {
-        document.exitPointerLock?.();
+        this.releasePointer();
         this.setPause(false);
         this.results.show(snap);
       }
     }
     // réunion : la souris est libérée tout de suite pour voter (pas besoin d'appuyer sur Échap)
-    if (G?.phase === 'reunion' && document.pointerLockElement) document.exitPointerLock();
+    if (G?.phase === 'reunion' && document.pointerLockElement) this.releasePointer();
     const inGame = !!L && !!G && (L.phase === 'partie' || L.phase === 'fin');
     if (inGame) this.hooks.enterOnline();
     else if (this.hooks.mode() === 'online') this.hooks.exitOnline();

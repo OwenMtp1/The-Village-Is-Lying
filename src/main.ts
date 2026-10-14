@@ -3,7 +3,10 @@
  * cinématique du village. Quatre modes : menu (et salon), exploration solo, partie en ligne, inspection
  * libre de la carte. Réglages, sons et vie du décor sont branchés ici.
  */
+import * as THREE from 'three';
 import { buildVillage, type Village } from './village/village';
+import { heightAt } from './village/layout';
+import { UNDER } from './village/underground';
 import { VillageView, type RoofMode } from './village/view';
 import { CinematicCamera } from './village/cinematic';
 import { VillageLife } from './village/life';
@@ -120,6 +123,7 @@ ui.innerHTML = `
   <div class="panel">
     <button class="hide-btn" title="Masquer">×</button>
     <button class="back-menu">← Menu principal</button>
+    <button class="open-map">🗺 Carte du village (M)</button>
     <h2>Caméra</h2>
     <div class="seg" data-k="mode"><button data-v="orbite">Orbite</button><button data-v="vol">Vol libre</button></div>
     <h2>Toits</h2>
@@ -127,7 +131,7 @@ ui.innerHTML = `
     <h2>Extérieurs</h2><div class="ext"></div>
     <h2>Intérieurs</h2><div class="int"></div>
     <div class="help">
-      <kbd>F</kbd> orbite / vol libre · <kbd>R</kbd> toits · <kbd>F3</kbd> mesures<br>
+      <kbd>M</kbd> carte (clic : s'y rendre) · <kbd>F</kbd> orbite / vol libre · <kbd>R</kbd> toits · <kbd>F3</kbd> mesures<br>
       Orbite : glisser pour tourner, clic droit pour déplacer, molette pour zoomer.<br>
       Vol : <kbd>Z Q S D</kbd> ou <kbd>W A S D</kbd>, glisser pour regarder, <kbd>Espace</kbd>/<kbd>C</kbd> monter/descendre, <kbd>Maj</kbd> plus vite, molette : vitesse.
     </div>
@@ -182,7 +186,7 @@ const soloHud = document.createElement('div');
 soloHud.className = 'solo-hud';
 soloHud.innerHTML = `<div class="who"><img alt=""><div><div class="mm-kicker">Exploration solo</div><div class="who-name"></div><div class="who-sub"></div></div></div>
   <button type="button" class="hud-btn pause-btn" title="Menu (Échap)" aria-label="Menu de pause">${ICON.menu}</button>
-  <div class="controls-help"><span>Cliquez pour diriger la caméra</span><span><kbd>Z Q S D</kbd> marcher</span><span><kbd>Maj</kbd> courir</span><span><kbd>Espace</kbd> sauter</span><span><kbd>V</kbd> vue subjective</span><span><kbd>L</kbd> lampe</span><span><kbd>N</kbd> vol libre</span><span><kbd>Échap</kbd> menu</span></div>
+  <div class="controls-help"><span>Cliquez pour diriger la caméra</span><span><kbd>Z Q S D</kbd> marcher</span><span><kbd>Maj</kbd> courir</span><span><kbd>Espace</kbd> sauter</span><span><kbd>V</kbd> vue subjective</span><span><kbd>L</kbd> lampe</span><span><kbd>N</kbd> vol libre</span><span><kbd>M</kbd> carte</span><span><kbd>Échap</kbd> menu</span></div>
   <div class="noclip-badge" role="status">Vol libre — traverse les murs · <kbd>Espace</kbd> / <kbd>C</kbd> monter / descendre · <kbd>Maj</kbd> plus vite · <kbd>N</kbd> pour atterrir</div>`;
 document.body.appendChild(soloHud);
 
@@ -219,14 +223,29 @@ const gameUi = new GameUi({
   setPaused(on) {
     game.frozen = on;
     online.paused = on;
+    // exploration libre : la caméra ne bouge plus pendant qu'on consulte la carte
+    if (mode === 'inspection') {
+      view.paused = on;
+      input.flush();
+    }
   },
   playerPose() {
+    if (mode === 'inspection') {
+      // exploration libre : la position de la caméra
+      const d = view.camera.getWorldDirection(new THREE.Vector3());
+      return { x: view.camera.position.x, z: view.camera.position.z, yaw: Math.atan2(d.x, d.z) };
+    }
     const p = mode === 'online' ? online.player : mode === 'solo' ? game.player : null;
     if (!p) return null;
     const cam = mode === 'online' ? online.cam : game.cam;
     return { x: p.controller.x, z: p.controller.z, yaw: cam.yaw };
   },
   soloCard() {
+    if (mode === 'inspection')
+      return `<div class="role-panel solo-card"><div class="rp-body"><div class="rp-role"><span>Exploration libre</span></div>
+        <div class="rp-camp">Caméra sans personnage</div>
+        <p class="rp-desc">Cliquez n'importe où sur la carte pour y placer la caméra, au niveau du sol. Cochez « Souterrains » pour voir les galeries et vous y rendre.</p>
+        <ul class="rp-lines"><li><kbd>Z Q S D</kbd><span>voler</span></li><li><kbd>Espace</kbd> / <kbd>C</kbd><span>monter / descendre</span></li><li><kbd>M</kbd><span>carte</span></li></ul></div></div>`;
     const info = game.info;
     if (!info) return '';
     return `<div class="role-panel solo-card"><img class="portrait" src="${cardUrl(info.player.variant)}" alt=""><div class="rp-body"><div class="rp-role"><span>${esc(info.player.firstName)}</span></div>
@@ -235,6 +254,16 @@ const gameUi = new GameUi({
       <ul class="rp-lines"><li><kbd>N</kbd><span>vol libre à travers les murs</span></li><li><kbd>L</kbd><span>lampe de poche</span></li><li><kbd>V</kbd><span>vue subjective</span></li></ul></div></div>`;
   },
   teleport(x, z, underground) {
+    if (mode === 'inspection') {
+      // la caméra se pose à hauteur d'homme au point choisi, regard inchangé (vers le nord par défaut)
+      const ground = underground ? UNDER.floor : village.collision.groundAt(x, z, heightAt(x, z) + 0.6);
+      const y = (Number.isFinite(ground) ? ground : heightAt(x, z)) + 1.7;
+      const d = view.camera.getWorldDirection(new THREE.Vector3()).setY(0);
+      if (d.lengthSq() < 1e-4) d.set(0, 0, -1);
+      d.normalize();
+      view.goTo({ id: 'carte', label: 'Carte', group: 'Extérieurs', mode: 'vol', pos: new THREE.Vector3(x, y, z), target: new THREE.Vector3(x + d.x * 10, y, z + d.z * 10) }, true);
+      return;
+    }
     game.teleport(x, z, underground);
   },
 });
@@ -242,6 +271,10 @@ let onlineKey = '';
 gameUi.attach(online);
 soloHud.querySelector('.pause-btn')!.addEventListener('click', () => gameUi.setPause(true));
 ui.querySelector('.back-menu')!.addEventListener('click', () => gameUi.backToMenu());
+ui.querySelector('.open-map')!.addEventListener('click', () => {
+  gameUi.pause.setTab('carte');
+  gameUi.setPause(true);
+});
 
 // ── réglages appliqués en direct ──
 settings.subscribe((s) => {

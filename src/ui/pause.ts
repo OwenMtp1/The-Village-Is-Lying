@@ -29,7 +29,7 @@ export class PauseMenu {
           <button type="button" role="tab" data-tab="parametres">Paramètres</button>
           <button type="button" role="tab" data-tab="commandes">Commandes</button>
         </nav>
-        <div class="pause-keys"><kbd>Échap</kbd> reprendre</div>
+        <div class="pause-keys"><kbd>Échap</kbd> / <kbd>M</kbd> reprendre</div>
       </header>
       <section class="pause-page" data-page="carte">
         <div class="pause-map"></div>
@@ -62,6 +62,7 @@ export class PauseMenu {
             <dt><kbd>T</kbd></dt><dd>signaler un corps</dd>
             <dt><kbd>U</kbd></dt><dd>réunion d’urgence (une par joueur)</dd>
             <dt><kbd>J</kbd></dt><dd>journal d’enquête</dd>
+            <dt><kbd>M</kbd> / <kbd>Échap</kbd></dt><dd>carte du village (et pause)</dd>
             <dt><kbd>N</kbd></dt><dd>exploration solo : vol libre à travers les murs</dd>
             <dt><kbd>Échap</kbd></dt><dd>libérer la souris, puis ce menu</dd>
           </dl>`;
@@ -113,14 +114,15 @@ export class PauseMenu {
     }
   }
 
-  show(on: boolean, online = this.online, ctx: { player?: { x: number; z: number; yaw: number } | null; teleport?: boolean } = {}) {
+  show(on: boolean, online = this.online, ctx: { player?: { x: number; z: number; yaw: number } | null; teleport?: boolean; inspection?: boolean } = {}) {
     this.online = online;
     this.el.classList.toggle('open', on);
     if (!on) return;
     this.setTab(this.tab);
     (this.el.querySelector('.confirm') as HTMLElement).hidden = true;
-    this.el.querySelector('.pause-kicker')!.textContent = online ? 'La partie continue pendant la pause' : 'Exploration solo';
+    this.el.querySelector('.pause-kicker')!.textContent = online ? 'La partie continue pendant la pause' : ctx.inspection ? 'Exploration libre de la carte' : 'Exploration solo';
     this.el.querySelector('[data-p="quit"]')!.textContent = online ? 'Quitter la partie' : 'Menu principal';
+    this.el.querySelector('.pause-title h2')!.textContent = ctx.inspection ? 'Carte' : 'Pause';
     this.el.querySelector('.confirm-text')!.textContent = online
       ? 'Quitter la partie en cours ? Votre personnage restera immobile dans le village et vous ne pourrez plus y revenir.'
       : 'Revenir au menu principal ?';

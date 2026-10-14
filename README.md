@@ -108,13 +108,14 @@ en sortir, ni en sautant, ni en vol libre (pointillé rouge sur la carte).
 
 ## Carte et écran de pause
 
-**Échap** ouvre l'écran de pause, façon jeu en monde ouvert, avec trois onglets : **Carte**, Paramètres,
+**Échap** (une seule pression, même souris capturée) ou **M** ouvre l'écran de pause, façon jeu en monde ouvert, avec trois onglets : **Carte**, Paramètres,
 Commandes. L'onglet Carte montre le plan du village dessiné comme un vieux parchemin (rues, places, bâtiments,
 champs, verger, cimetière, forêt, rose des vents) — molette pour zoomer, glisser pour se déplacer, survol pour lire
 le nom du lieu, ◎ pour se recentrer — avec, à droite, **votre rôle et votre journal d'enquête** en partie (ou votre
 personnage en solo). Vous n'y voyez que votre propre position. En **exploration solo**, un clic sur la carte vous
 **téléporte** à l'endroit choisi ; la case « Souterrains » affiche les galeries et leurs entrées, où l'on peut aussi
-se téléporter.
+se téléporter. En **exploration libre** (« Explorer la carte librement »), `M` ouvre la même carte et un clic y pose
+la caméra, à hauteur d'homme.
 
 ## Son et vie du décor
 
