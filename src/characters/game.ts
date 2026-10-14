@@ -16,6 +16,9 @@ import type { Sex } from './catalog';
 import type { Input } from '../input';
 import type { Village } from '../village/village';
 import { dayState } from '../shared/rules';
+import { insideLimit } from '../village/boundary';
+import { UNDER } from '../village/underground';
+import { heightAt } from '../village/layout';
 import { lookDir, type Flashlights } from './flashlight';
 
 /**
@@ -154,6 +157,25 @@ export class Game {
     return this.info;
   }
 
+  /** Téléportation (carte de l'écran de pause) : au sol du point choisi, ou dans les galeries souterraines. */
+  teleport(x: number, z: number, underground: boolean) {
+    const p = this.player;
+    if (!p) return;
+    const w = this.village.collision;
+    let y = underground ? UNDER.floor + 0.02 : w.groundAt(x, z, heightAt(x, z) + 0.6);
+    if (!Number.isFinite(y)) y = heightAt(x, z);
+    // jamais dans un mur ou un meuble : on écarte le personnage de l'obstacle
+    const r = w.resolve(x, z, 0.3, y, 1.7);
+    const c = p.controller;
+    c.x = r.x;
+    c.z = r.z;
+    c.y = y;
+    c.vx = c.vz = c.vy = 0;
+    c.grounded = true;
+    p.fly(0, 0, 0, 0, this.cam.yaw);
+    this.input.flush();
+  }
+
   /** Fin de partie : personnages retirés, modèles libérés (le village reste en place). */
   end() {
     this.player?.dispose();
@@ -186,6 +208,10 @@ export class Game {
       v.y += u;
       if (v.lengthSq() > 1) v.normalize();
       const speed = NOCLIP_SPEED * (inp.held('ShiftLeft') || inp.held('ShiftRight') ? 3 : 1);
+      // le vol libre traverse les murs, pas la limite de la carte
+      const nx = p.controller.x + v.x * speed * dt;
+      const nz = p.controller.z + v.z * speed * dt;
+      if (!insideLimit(nx, nz, 1)) v.x = v.z = 0;
       p.fly(dt, v.x * speed, v.y * speed, v.z * speed, this.cam.yaw);
     } else {
       const cmd = readMove(inp, this.cam, this.frozen);

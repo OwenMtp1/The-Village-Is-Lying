@@ -220,6 +220,23 @@ const gameUi = new GameUi({
     game.frozen = on;
     online.paused = on;
   },
+  playerPose() {
+    const p = mode === 'online' ? online.player : mode === 'solo' ? game.player : null;
+    if (!p) return null;
+    const cam = mode === 'online' ? online.cam : game.cam;
+    return { x: p.controller.x, z: p.controller.z, yaw: cam.yaw };
+  },
+  soloCard() {
+    const info = game.info;
+    if (!info) return '';
+    return `<div class="role-panel solo-card"><img class="portrait" src="${cardUrl(info.player.variant)}" alt=""><div class="rp-body"><div class="rp-role"><span>${esc(info.player.firstName)}</span></div>
+      <div class="rp-camp">Exploration solo</div>
+      <p class="rp-desc">Cliquez n'importe où sur la carte pour vous y rendre. Cochez « Souterrains » pour voir les galeries et vous y téléporter.</p>
+      <ul class="rp-lines"><li><kbd>N</kbd><span>vol libre à travers les murs</span></li><li><kbd>L</kbd><span>lampe de poche</span></li><li><kbd>V</kbd><span>vue subjective</span></li></ul></div></div>`;
+  },
+  teleport(x, z, underground) {
+    game.teleport(x, z, underground);
+  },
 });
 let onlineKey = '';
 gameUi.attach(online);

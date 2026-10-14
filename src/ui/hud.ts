@@ -119,22 +119,14 @@ export class OnlineHud {
       </div>`;
   }
 
+  /** Carte du rôle (HTML), pour l'écran de pause. */
+  roleCardHtml() {
+    return (this.el.querySelector('.role-panel') as HTMLElement).outerHTML;
+  }
+
   private renderJournal(G: GameView, S: PrivateInfo | null) {
     const j = this.el.querySelector('.journal') as HTMLElement;
-    const findings = S ? Object.entries(S.findings) : [];
-    const people = Object.keys(G.appearances);
-    j.innerHTML = `<header><h2>${ICON.livre} Journal d’enquête</h2><button type="button" class="journal-close" aria-label="Fermer le journal">×</button></header>
-      <div class="j-cols">
-        <section><h3>Vos enquêtes</h3>${
-          findings.length
-            ? `<ul>${findings.map(([id, k]) => `<li class="${k ? 'k-bad' : 'k-ok'}">${k ? ICON.dague : ICON.coche}<span><b>${esc(net.nameOf(id))}</b> ${k ? 'est un tueur.' : 'n’est pas un tueur.'}</span></li>`).join('')}</ul>`
-            : `<p class="muted">${S?.role === 'detective' ? 'Approchez quelqu’un et appuyez sur R pour enquêter.' : 'Aucune enquête : seuls les détectives peuvent enquêter.'}</p>`
-        }
-        <h3>Habitants</h3><ul class="j-people">${people
-          .map((id) => `<li class="${G.alive[id] ? '' : 'gone'}">${portrait(G.appearances[id])}<span>${esc(net.nameOf(id))}${id === net.me ? ' <em>(vous)</em>' : ''}</span><small>${G.alive[id] ? 'en vie' : `${ICON.crane} mort`}</small></li>`)
-          .join('')}</ul></section>
-        <section><h3>Événements publics</h3><ol class="j-log">${G.log.length ? G.log.map((x) => `<li>${esc(x)}</li>`).join('') : '<li class="muted">Rien à signaler pour le moment.</li>'}</ol></section>
-      </div>`;
+    j.innerHTML = `<header><h2>${ICON.livre} Journal d’enquête</h2><button type="button" class="journal-close" aria-label="Fermer le journal">×</button></header>${journalHtml(G, S)}`;
   }
 
   private renderMeeting(G: GameView, now: number, alive: boolean) {
@@ -175,6 +167,23 @@ export class OnlineHud {
     meet.querySelector('.meet-left')!.textContent = `${Math.ceil(left / 1000)} s`;
   }
 }
+
+/** Contenu du journal d'enquête : enquêtes du joueur, habitants vivants ou morts, événements publics. */
+export function journalHtml(G: GameView, S: PrivateInfo | null) {
+    const findings = S ? Object.entries(S.findings) : [];
+    const people = Object.keys(G.appearances);
+    return `<div class="j-cols">
+        <section><h3>Vos enquêtes</h3>${
+          findings.length
+            ? `<ul>${findings.map(([id, k]) => `<li class="${k ? 'k-bad' : 'k-ok'}">${k ? ICON.dague : ICON.coche}<span><b>${esc(net.nameOf(id))}</b> ${k ? 'est un tueur.' : 'n’est pas un tueur.'}</span></li>`).join('')}</ul>`
+            : `<p class="muted">${S?.role === 'detective' ? 'Approchez quelqu’un et appuyez sur R pour enquêter.' : 'Aucune enquête : seuls les détectives peuvent enquêter.'}</p>`
+        }
+        <h3>Habitants</h3><ul class="j-people">${people
+          .map((id) => `<li class="${G.alive[id] ? '' : 'gone'}">${portrait(G.appearances[id])}<span>${esc(net.nameOf(id))}${id === net.me ? ' <em>(vous)</em>' : ''}</span><small>${G.alive[id] ? 'en vie' : `${ICON.crane} mort`}</small></li>`)
+          .join('')}</ul></section>
+        <section><h3>Événements publics</h3><ol class="j-log">${G.log.length ? G.log.map((x) => `<li>${esc(x)}</li>`).join('') : '<li class="muted">Rien à signaler pour le moment.</li>'}</ol></section>
+      </div>`;
+  }
 
 /** Instantané des résultats : reste lisible même si un autre joueur ramène déjà la salle au salon. */
 export interface ResultSnapshot {

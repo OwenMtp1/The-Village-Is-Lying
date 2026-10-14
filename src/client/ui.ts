@@ -8,7 +8,7 @@ import type { GameEvent } from '../shared/protocol';
 import { sfx } from '../audio/sfx';
 import { MainMenu } from '../ui/menu';
 import { LobbyScreen } from '../ui/lobby';
-import { OnlineHud, ResultsScreen, snapshotResult } from '../ui/hud';
+import { OnlineHud, ResultsScreen, journalHtml, snapshotResult } from '../ui/hud';
 import { PauseMenu } from '../ui/pause';
 import { Toasts, type ToastKind } from '../ui/toasts';
 import { net } from './net';
@@ -29,6 +29,12 @@ export interface UiHooks {
   inspect(): void;
   /** gel des commandes du personnage (pause) */
   setPaused(on: boolean): void;
+  /** position du joueur pour la carte (la sienne seulement) */
+  playerPose(): { x: number; z: number; yaw: number } | null;
+  /** fiche du personnage (exploration solo) pour l'écran de pause */
+  soloCard(): string;
+  /** téléportation (exploration solo) vers un point choisi sur la carte */
+  teleport(x: number, z: number, underground: boolean, name: string): void;
 }
 
 export class GameUi {
@@ -69,6 +75,12 @@ export class GameUi {
       this.quitOnline();
     };
     this.pause.onResume = () => this.setPause(false);
+    this.pause.onTeleport = (p) => {
+      if (hooks.mode() !== 'solo') return;
+      hooks.teleport(p.x, p.z, p.underground, p.name);
+      this.toast(`Vous voici : ${p.name}.`, 'ok');
+      this.setPause(false);
+    };
     this.pause.onQuit = () => {
       this.setPause(false);
       if (hooks.mode() === 'online') this.quitOnline();
@@ -116,8 +128,17 @@ export class GameUi {
   setPause(on: boolean) {
     if (on === this.pause.open) return;
     if (on) document.exitPointerLock?.();
-    this.pause.show(on, this.hooks.mode() === 'online');
+    const online = this.hooks.mode() === 'online';
+    if (on) this.refreshPauseSide();
+    this.pause.show(on, online, { player: this.hooks.playerPose(), teleport: this.hooks.mode() === 'solo' });
     this.hooks.setPaused(on);
+  }
+
+  /** Panneau de droite de l'écran de pause : rôle et journal (en ligne), personnage (solo). */
+  private refreshPauseSide() {
+    const G = net.game;
+    if (this.hooks.mode() === 'online' && G) this.pause.setSide(`${this.hud.roleCardHtml()}<div class="pause-journal">${journalHtml(G, net.secret)}</div>`);
+    else this.pause.setSide(this.hooks.soloCard());
   }
 
   /** Quitte le salon ou la partie en ligne et revient au menu principal. */
@@ -158,6 +179,7 @@ export class GameUi {
     if (lobbyOpen) this.lobby.render(L!);
     if (L) this.menu.show(false);
     else if (this.hooks.mode() === 'menu' && !this.menu.open) this.menu.show(true);
+    if (this.pause.open && this.hooks.mode() === 'online') this.refreshPauseSide();
     const hudOpen = inGame && !this.results.open;
     this.hud.el.classList.toggle('open', hudOpen);
     if (hudOpen) this.hud.render(G!, net.secret, this.online?.prompts ?? []);

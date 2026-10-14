@@ -8,7 +8,8 @@ import { buildCollisionWorld } from '../src/village/collision';
 import { CharacterController } from '../src/characters/controller';
 import { MOVE } from '../src/characters/config';
 import { ROOMS, SHAFTS, UNDER, undergroundGrid, undergroundPlace } from '../src/village/underground';
-import { BOUNDARY } from '../src/village/boundary';
+import { insideLimit, limitAt } from '../src/village/boundary';
+import { VILLAGE_CENTER } from '../src/village/layout';
 import { isFree } from '../src/village/layout';
 
 const world = buildCollisionWorld();
@@ -62,10 +63,12 @@ test('galeries : toutes les salles sont reliées entre elles et aux cinq entrée
 });
 
 test('limite de la carte : mur invisible, on ne sort pas, même en courant et en sautant', () => {
-  for (const a of [0, 1.3, 2.6, 4.1, 5.5]) {
-    const r0 = BOUNDARY.radius - 12;
-    const c = new CharacterController(world, Math.cos(a) * r0, Math.sin(a) * r0, 1.75);
+  const [cx, cz] = VILLAGE_CENTER;
+  for (const a of [0, 0.8, 1.3, 2.1, 2.6, 3.4, 4.1, 4.9, 5.5]) {
+    const r0 = limitAt(a) - 12;
+    const c = new CharacterController(world, cx + Math.cos(a) * r0, cz + Math.sin(a) * r0, 1.75);
     for (let i = 0; i < 20 * 60; i++) c.update(1 / 60, { x: Math.cos(a), z: Math.sin(a), run: true, jump: i % 30 === 0 });
-    assert.ok(Math.hypot(c.x, c.z) < BOUNDARY.radius - 0.5, `sorti à l'angle ${a}`);
+    assert.ok(insideLimit(c.x, c.z), `sorti à l'angle ${a}`);
+    assert.ok(Math.hypot(c.x - cx, c.z - cz) > limitAt(a) - 3, `arrêté trop tôt à l'angle ${a}`);
   }
 });

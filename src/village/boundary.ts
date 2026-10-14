@@ -1,11 +1,23 @@
 /**
- * Limite du monde (données pures) : un mur invisible et infranchissable au bout de la carte (cercle de 295 m de
- * rayon, juste avant le bord du terrain qui s'arrête à 320 m), dans la forêt. Rien n'est dessiné : on bute
- * simplement dessus, même en sautant.
+ * Limite du monde (données pures) : un mur invisible et infranchissable qui suit la lisière de la forêt, 35 m sous
+ * les arbres (on peut s'y enfoncer un peu, pas aller se perdre dans les collines du fond). Rien n'est dessiné :
+ * on bute simplement dessus, même en sautant ou en vol libre.
  */
-import { heightAt, roadDistance } from './layout';
+import { VILLAGE_CENTER, forestEdge, heightAt, roadDistance } from './layout';
 
-export const BOUNDARY = { radius: 295, segments: 160, height: 7, thick: 2 };
+export const BOUNDARY = { depth: 35, segments: 160, height: 7, thick: 2 };
+
+/** Distance de la limite au centre du village dans la direction `a` (rad). */
+export function limitAt(a: number) {
+  const [cx, cz] = VILLAGE_CENTER;
+  return forestEdge(cx + Math.cos(a) * 50, cz + Math.sin(a) * 50) + BOUNDARY.depth;
+}
+
+/** Le point (x, z) est-il dans la zone jouable (avec une marge) ? */
+export function insideLimit(x: number, z: number, margin = 0) {
+  const [cx, cz] = VILLAGE_CENTER;
+  return Math.hypot(x - cx, z - cz) < limitAt(Math.atan2(z - cz, x - cx)) - margin;
+}
 
 export interface WallSegment {
   x: number;
@@ -22,14 +34,14 @@ export interface WallSegment {
 export const WALL: WallSegment[] = (() => {
   const out: WallSegment[] = [];
   const n = BOUNDARY.segments;
-  const R = BOUNDARY.radius;
+  const [cx, cz] = VILLAGE_CENTER;
   for (let i = 0; i < n; i++) {
     const a0 = (i / n) * Math.PI * 2;
     const a1 = ((i + 1) / n) * Math.PI * 2;
-    const ax = Math.cos(a0) * R;
-    const az = Math.sin(a0) * R;
-    const bx = Math.cos(a1) * R;
-    const bz = Math.sin(a1) * R;
+    const ax = cx + Math.cos(a0) * limitAt(a0);
+    const az = cz + Math.sin(a0) * limitAt(a0);
+    const bx = cx + Math.cos(a1) * limitAt(a1);
+    const bz = cz + Math.sin(a1) * limitAt(a1);
     const x = (ax + bx) / 2;
     const z = (az + bz) / 2;
     let g0 = Infinity;

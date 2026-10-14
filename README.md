@@ -103,8 +103,18 @@ Données : `src/village/underground.ts` (partagées avec le serveur, lignes de v
 `src/village/undergroundMesh.ts`, tests : `tests/underground.test.ts` (descente et remontée par chaque entrée avec
 le vrai contrôleur, toutes les salles reliées).
 
-La carte est bordée d'un **mur invisible** (cercle de 295 m, juste avant le bord du terrain) : on ne peut pas en
-sortir, même en sautant (le vol libre de l'exploration solo le traverse).
+La carte est bordée d'un **mur invisible** qui suit la lisière de la forêt, 35 m sous les arbres : on ne peut pas
+en sortir, ni en sautant, ni en vol libre (pointillé rouge sur la carte).
+
+## Carte et écran de pause
+
+**Échap** ouvre l'écran de pause, façon jeu en monde ouvert, avec trois onglets : **Carte**, Paramètres,
+Commandes. L'onglet Carte montre le plan du village dessiné comme un vieux parchemin (rues, places, bâtiments,
+champs, verger, cimetière, forêt, rose des vents) — molette pour zoomer, glisser pour se déplacer, survol pour lire
+le nom du lieu, ◎ pour se recentrer — avec, à droite, **votre rôle et votre journal d'enquête** en partie (ou votre
+personnage en solo). Vous n'y voyez que votre propre position. En **exploration solo**, un clic sur la carte vous
+**téléporte** à l'endroit choisi ; la case « Souterrains » affiche les galeries et leurs entrées, où l'on peut aussi
+se téléporter.
 
 ## Son et vie du décor
 

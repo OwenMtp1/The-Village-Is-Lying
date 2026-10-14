@@ -107,7 +107,7 @@ await ev(`window.__village.gameUi.hud.toggleJournal(true); window.__village.game
 await shot('08-journal');
 await ev(`window.__village.gameUi.hud.toggleJournal(false)`);
 await ev(`window.__village.gameUi.setPause(true)`);
-await click('[data-p="settings"]');
+// onglet Carte : plan du village et rôle
 await wait(800);
 await shot('09-pause');
 await ev(`window.__village.gameUi.setPause(false)`);
